@@ -2,6 +2,12 @@
 export const START='rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w';
 export const red=p=>p>='A'&&p<='Z';
 export function parse(f){const[s,t]=f.trim().split(/\s+/);const b=[];for(const ch of s||''){if(ch==='/')continue;if(ch>='0'&&ch<='9')for(let i=0;i<+ch;i++)b.push('');else if('rnbakcpRNBAKCP'.includes(ch))b.push(ch);else return null}return b.length===90?{b,turn:t==='b'?'b':'w'}:null}
+// Forgiving parser for scanned FENs: pads/truncates rows to 9 columns and pads missing ranks. fixed=true if anything was repaired.
+export function parseLoose(f){const[s,t]=(f||'').trim().split(/\s+/);const rows=(s||'').split('/');if(rows.length<5||rows.length>12)return null;
+let fixed=rows.length!==10;const b=[];
+for(let r=0;r<10;r++){const row=[];for(const ch of rows[r]||''){if(ch>='0'&&ch<='9')for(let i=0;i<+ch;i++)row.push('');else if('rnbakcpRNBAKCP'.includes(ch))row.push(ch);else return null}
+if(row.length!==9)fixed=true;while(row.length<9)row.push('');b.push(...row.slice(0,9))}
+return{b,turn:t==='b'?'b':'w',fixed}}
 export function toFen(b,turn){const o=[];for(let r=0;r<10;r++){let s='',n=0;for(let c=0;c<9;c++){const p=b[r*9+c];if(p){if(n)s+=n;n=0;s+=p}else n++}if(n)s+=n;o.push(s)}return o.join('/')+' '+turn}
 const O=[[1,0],[-1,0],[0,1],[0,-1]],D=[[1,1],[1,-1],[-1,1],[-1,-1]],ok=(r,c)=>r>=0&&r<10&&c>=0&&c<9;
 export function pseudo(b,side){const W=side==='w',M=[];

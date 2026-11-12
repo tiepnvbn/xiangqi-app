@@ -1,6 +1,6 @@
 // Serverless function: image -> FEN. Uses Gemini (free tier) if GEMINI_API_KEY is set, else Claude if ANTHROPIC_API_KEY is set.
 const PROMPT=`This is a photo/screenshot of a Xiangqi (Chinese chess) position. Return ONLY its FEN, no other text.
-Rules: 10 ranks separated by '/', from Black's back rank (top) to Red's back rank (bottom); digits = empty points.
+Rules: 10 ranks separated by '/', from Black's back rank (top) to Red's back rank (bottom); digits = empty points; every rank must add up to exactly 9 columns.
 Red (uppercase): R rook 車, N horse 馬, B elephant 相, A advisor 仕, K general 帥, C cannon 炮, P soldier 兵.
 Black (lowercase): r 車, n 馬, b 象, a 士, k 將, c 砲, p 卒. Then a space and w (Red to move) or b. Example start: rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w`;
 const GEMINI_MODELS=[process.env.GEMINI_MODEL,'gemini-3.8-flash','gemini-3.5-flash-lite','gemini-3-flash-preview'].filter(Boolean);

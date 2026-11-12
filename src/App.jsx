@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {START,parse,toFen,legal,apply,inCheck,red} from './xq.js';
+import {START,parse,parseLoose,toFen,legal,apply,inCheck,red} from './xq.js';
 const GR={r:'車',n:'馬',b:'相',a:'仕',k:'帥',c:'炮',p:'兵'},GB={r:'車',n:'馬',b:'象',a:'士',k:'將',c:'砲',p:'卒'};
 const glyph=p=>(red(p)?GR:GB)[p.toLowerCase()];
 const LV=[{n:'Beginner',depth:1,noise:120},{n:'Easy',depth:2,noise:40},{n:'Medium',depth:3,noise:0},{n:'Hard',depth:4,noise:0}];
@@ -33,8 +33,8 @@ export default function App(){
     try{const img=await createImageBitmap(file),s=Math.min(1,1280/Math.max(img.width,img.height)),c=document.createElement('canvas');
       c.width=img.width*s;c.height=img.height*s;c.getContext('2d').drawImage(img,0,0,c.width,c.height);
       const r=await fetch('/api/scan',{method:'POST',signal:AbortSignal.timeout(70000),headers:{'content-type':'application/json'},body:JSON.stringify({image:c.toDataURL('image/jpeg',.85).split(',')[1]})});
-      const j=await r.json(),p=j.fen&&parse(j.fen);if(!p)throw new Error(j.error||'no FEN');
-      setB(p.b);setTurn(p.turn);setMode('edit');setMsg('Scanned. Fix any mistakes, then press Play.');
+      const j=await r.json(),p=j.fen&&parseLoose(j.fen);if(!p)throw new Error(j.error||'no FEN');
+      setB(p.b);setTurn(p.turn);setMode('edit');setMsg(p.fixed?'Scanned, but some rows looked wrong and were repaired. Check the board carefully, fix mistakes, then press Play.':'Scanned. Fix any mistakes, then press Play.');
     }catch(e){setMsg('Scan failed: '+(e.name==='TimeoutError'?'timed out, please try again':e.message))}}
   const targets=sel!==null?ms.filter(m=>m[0]===sel).map(m=>m[1]):[];
   const status=mode==='edit'?'Edit mode':over?(turn==='w'?'Black':'Red')+' wins':(chk?'Check! ':'')+(turn==='w'?'Red':'Black')+' to move'+(busy?' (thinking…)':'');
