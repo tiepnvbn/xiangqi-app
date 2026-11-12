@@ -29,13 +29,13 @@ export default function App(){
   const load=f=>{const p=parse(f);if(!p)return setMsg('Invalid FEN');setB(p.b);setTurn(p.turn);setHist([]);setSel(null);setMsg('')};
   const undo=()=>{if(!hist.length)return;const k=turn===human&&hist.length>1?2:1,h=hist[hist.length-k];setB(h.b);setTurn(h.turn);setHist(hist.slice(0,-k));setSel(null)};
   const play=()=>{if(!b.includes('K')||!b.includes('k'))return setMsg('Both generals are required.');setMsg('');setHist([]);setSel(null);setMode('play')};
-  async function scan(file){if(!file)return;setMsg('Scanning…');
+  async function scan(file){if(!file)return;setMsg('Scanning… (can take up to ~30s)');
     try{const img=await createImageBitmap(file),s=Math.min(1,1280/Math.max(img.width,img.height)),c=document.createElement('canvas');
       c.width=img.width*s;c.height=img.height*s;c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-      const r=await fetch('/api/scan',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({image:c.toDataURL('image/jpeg',.85).split(',')[1]})});
+      const r=await fetch('/api/scan',{method:'POST',signal:AbortSignal.timeout(70000),headers:{'content-type':'application/json'},body:JSON.stringify({image:c.toDataURL('image/jpeg',.85).split(',')[1]})});
       const j=await r.json(),p=j.fen&&parse(j.fen);if(!p)throw new Error(j.error||'no FEN');
       setB(p.b);setTurn(p.turn);setMode('edit');setMsg('Scanned. Fix any mistakes, then press Play.');
-    }catch(e){setMsg('Scan failed: '+e.message)}}
+    }catch(e){setMsg('Scan failed: '+(e.name==='TimeoutError'?'timed out, please try again':e.message))}}
   const targets=sel!==null?ms.filter(m=>m[0]===sel).map(m=>m[1]):[];
   const status=mode==='edit'?'Edit mode':over?(turn==='w'?'Black':'Red')+' wins':(chk?'Check! ':'')+(turn==='w'?'Red':'Black')+' to move'+(busy?' (thinking…)':'');
   const lines=[];for(let r=0;r<10;r++)lines.push([X(0),Y(r),X(8),Y(r)]);
