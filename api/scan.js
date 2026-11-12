@@ -4,18 +4,23 @@ Rules: 10 ranks separated by '/', from Black's back rank (top) to Red's back ran
 Red (uppercase): R rook 車, N horse 馬, B elephant 相, A advisor 仕, K general 帥, C cannon 炮, P soldier 兵.
 Black (lowercase): r 車, n 馬, b 象, a 士, k 將, c 砲, p 卒. Then a space and w (Red to move) or b. Example start: rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w`;
 const GEMINI_MODELS=[process.env.GEMINI_MODEL,'gemini-3.8-flash','gemini-3.5-flash-lite','gemini-3-flash-preview'].filter(Boolean);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function gemini(image){
   let err;
   for(const model of GEMINI_MODELS){
-    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{method:'POST',
-      headers:{'content-type':'application/json','x-goog-api-key':process.env.GEMINI_API_KEY},
-      body:JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:image}},{text:PROMPT}]}],generationConfig:{temperature:0,maxOutputTokens:2000}})});
-    const j=await r.json().catch(()=>({}));
-    if(r.ok)return (j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('');
-    const m=j.error?.message||'Gemini error '+r.status;
-    err=r.status===429?'Gemini free-tier rate limit reached. Try again in a minute.':m;
-    // try the next model if this one is retired / unknown / rate-limited
-    if(!(r.status===404||r.status===429||/no longer available|not found|not supported/i.test(m)))break;
+    for(let attempt=0;attempt<2;attempt++){
+      const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{method:'POST',
+        headers:{'content-type':'application/json','x-goog-api-key':process.env.GEMINI_API_KEY},
+        body:JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:image}},{text:PROMPT}]}],generationConfig:{temperature:0,maxOutputTokens:2000}})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok)return (j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('');
+      const m=j.error?.message||'Gemini error '+r.status;
+      const busy=r.status===503||r.status===500||r.status===529||/high demand|overloaded|unavailable/i.test(m);
+      err=r.status===429?'Gemini free-tier rate limit reached. Try again in a minute.':busy?'Gemini is busy right now. Please try again in a moment.':m;
+      if(busy&&attempt===0){await sleep(800);continue}   // one quick retry on the same model
+      if(busy||r.status===404||r.status===429||/no longer available|not found|not supported/i.test(m))break; // next model
+      throw new Error(m);                                  // real error (bad key, bad request...)
+    }
   }
   throw new Error(err);
 }
