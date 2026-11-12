@@ -1,1 +1,22 @@
-# xiangqi-app
+# Xiangqi Web App (Vite + React)
+Play vs engine (4 levels), free position setup, FEN import/export, undo, and photo-to-position scanning.
+
+## Run
+    npm install && npm test && npm run dev
+
+## Deploy (Vercel)
+Push to Git, import in Vercel, add env var `ANTHROPIC_API_KEY` (optional `ANTHROPIC_MODEL`). `vercel.json` sets COOP/COEP headers; `public/_headers` does the same on Netlify.
+Photo scan uses `api/scan.js` (Vercel function). On Netlify, port it to a Netlify Function. Without the key, everything else still works.
+
+## Structure
+- `src/xq.js` rules (legal moves, check, flying general, mate = no legal moves), FEN, alpha-beta search
+- `src/engine.worker.js` Web Worker running the built-in engine
+- `src/App.jsx` board, edit mode, FEN, scan UI
+- `api/scan.js` image -> FEN via Claude vision
+
+## Upgrading to Pikafish (strongest AI)
+Not bundled (WASM + .nnue must be downloaded from a Pikafish WASM build). Replace `engine.worker.js` with a worker that loads it and speaks UCI:
+`position fen <fen>` then `go depth N` (or `go movetime ms`); convert the returned `bestmove` (e.g. `h2e2`) to `[from,to]` indices. Keep the `{id,move}` reply shape.
+
+## Not included yet
+Repetition/perpetual-check draw rules, board flipping for Black, ONNX in-browser scanner, PWA.
