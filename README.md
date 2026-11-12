@@ -5,7 +5,7 @@ Play vs engine (4 levels), free position setup, FEN import/export, undo, and pho
     npm install && npm test && npm run dev
 
 ## Deploy (Vercel)
-Push to Git, import in Vercel, then add `GEMINI_API_KEY` (free: create one at https://aistudio.google.com/apikey, no card needed) and redeploy. Optional: `GEMINI_MODEL` (default `gemini-2.5-flash`). If no Gemini key is set, `ANTHROPIC_API_KEY` is used instead (paid). Note: Google may use free-tier content to improve its products, so don't scan private images. `vercel.json` sets COOP/COEP headers; `public/_headers` does the same on Netlify.
+Push to Git, import in Vercel, then add `GEMINI_API_KEY` (free: create one at https://aistudio.google.com/apikey, no card needed) and redeploy. Optional: `GEMINI_MODEL` (default `gemini-3.8-flash`; retired/rate-limited models automatically fall back to `gemini-3.5-flash-lite`, then `gemini-3-flash-preview`). If no Gemini key is set, `ANTHROPIC_API_KEY` is used instead (paid). Note: Google may use free-tier content to improve its products, so don't scan private images. `vercel.json` sets COOP/COEP headers; `public/_headers` does the same on Netlify.
 Photo scan uses `api/scan.js` (Vercel function). On Netlify, port it to a Netlify Function. Without the key, everything else still works.
 
 ## Structure
