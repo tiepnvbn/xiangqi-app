@@ -20,3 +20,6 @@ Not bundled (WASM + .nnue must be downloaded from a Pikafish WASM build). Replac
 
 ## Not included yet
 Repetition/perpetual-check draw rules, board flipping for Black, ONNX in-browser scanner, PWA.
+
+## Scan is slow / times out
+Set `GEMINI_MODEL=gemini-3.5-flash-lite` in Vercel for faster (slightly less accurate) scans. `vercel.json` raises the function limit to 60s.

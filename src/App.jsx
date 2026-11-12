@@ -30,7 +30,7 @@ export default function App(){
   const undo=()=>{if(!hist.length)return;const k=turn===human&&hist.length>1?2:1,h=hist[hist.length-k];setB(h.b);setTurn(h.turn);setHist(hist.slice(0,-k));setSel(null)};
   const play=()=>{if(!b.includes('K')||!b.includes('k'))return setMsg('Both generals are required.');setMsg('');setHist([]);setSel(null);setMode('play')};
   async function scan(file){if(!file)return;setMsg('Scanning… (can take up to ~30s)');
-    try{const img=await createImageBitmap(file),s=Math.min(1,1280/Math.max(img.width,img.height)),c=document.createElement('canvas');
+    try{const img=await createImageBitmap(file),s=Math.min(1,1024/Math.max(img.width,img.height)),c=document.createElement('canvas');
       c.width=img.width*s;c.height=img.height*s;c.getContext('2d').drawImage(img,0,0,c.width,c.height);
       const r=await fetch('/api/scan',{method:'POST',signal:AbortSignal.timeout(70000),headers:{'content-type':'application/json'},body:JSON.stringify({image:c.toDataURL('image/jpeg',.85).split(',')[1]})});
       const j=await r.json(),p=j.fen&&parseLoose(j.fen);if(!p)throw new Error(j.error||'no FEN');
