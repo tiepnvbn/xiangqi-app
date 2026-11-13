@@ -1,5 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {START,parse,parseLoose,toFen,legal,apply,inCheck,red} from './xq.js';
+import {detect,finishCore} from './vision.js';
 const GR={r:'車',n:'馬',b:'相',a:'仕',k:'帥',c:'炮',p:'兵'},GB={r:'車',n:'馬',b:'象',a:'士',k:'將',c:'砲',p:'卒'};
 const glyph=p=>(red(p)?GR:GB)[p.toLowerCase()];
 const LV=[{n:'Beginner',depth:1,noise:120},{n:'Easy',depth:2,noise:40},{n:'Medium',depth:3,noise:0},{n:'Hard',depth:4,noise:0}];
@@ -29,13 +30,22 @@ export default function App(){
   const load=f=>{const p=parse(f);if(!p)return setMsg('Invalid FEN');setB(p.b);setTurn(p.turn);setHist([]);setSel(null);setMsg('')};
   const undo=()=>{if(!hist.length)return;const k=turn===human&&hist.length>1?2:1,h=hist[hist.length-k];setB(h.b);setTurn(h.turn);setHist(hist.slice(0,-k));setSel(null)};
   const play=()=>{if(!b.includes('K')||!b.includes('k'))return setMsg('Both generals are required.');setMsg('');setHist([]);setSel(null);setMode('play')};
-  async function scan(file){if(!file)return;setMsg('Scanning… (can take up to ~30s)');
+  async function scan(file){if(!file)return;setMsg('Detecting pieces…');
+    try{const d=await detect(file);
+      if(d){setMsg(`Found ${d.P.length} pieces, reading them…`);
+        const r=await fetch('/api/scan',{method:'POST',signal:AbortSignal.timeout(45000),headers:{'content-type':'application/json'},body:JSON.stringify({image:d.sheet,mode:'tiles',n:d.P.length})});
+        const j=await r.json(),f=r.ok&&finishCore(d,j.chars);
+        if(f){setB(f.board);setTurn('w');setMode('edit');setMsg(`Found ${d.P.length} pieces locally.`+(f.warn?` ${f.warn} could not be read, add them by hand.`:'')+(f.ambiguous?' Check the alignment (use the arrows if everything is shifted).':'')+' Fix any mistakes, then press Play.');return}}
+    }catch(e){}
+    setMsg('Local detection was not confident, using full-image scan…');return fullScan(file)}
+  async function fullScan(file){
     try{const img=await createImageBitmap(file),s=Math.min(1,1024/Math.max(img.width,img.height)),c=document.createElement('canvas');
       c.width=img.width*s;c.height=img.height*s;c.getContext('2d').drawImage(img,0,0,c.width,c.height);
       const r=await fetch('/api/scan',{method:'POST',signal:AbortSignal.timeout(70000),headers:{'content-type':'application/json'},body:JSON.stringify({image:c.toDataURL('image/jpeg',.85).split(',')[1]})});
       const j=await r.json(),p=j.fen&&parseLoose(j.fen);if(!p)throw new Error(j.error||'no FEN');
       setB(p.b);setTurn(p.turn);setMode('edit');setMsg(p.fixed?'Scanned, but some rows looked wrong and were repaired. Check the board carefully, fix mistakes, then press Play.':'Scanned. Fix any mistakes, then press Play.');
     }catch(e){setMsg('Scan failed: '+(e.name==='TimeoutError'?'timed out, please try again':e.message))}}
+  const shift=(dr,dc)=>{const n=Array(90).fill('');for(let i=0;i<90;i++)if(b[i]){const r=(i/9|0)+dr,c=i%9+dc;if(r<0||r>9||c<0||c>8)return setMsg('Cannot shift further');n[r*9+c]=b[i]}setB(n)};
   const targets=sel!==null?ms.filter(m=>m[0]===sel).map(m=>m[1]):[];
   const status=mode==='edit'?'Edit mode':over?(turn==='w'?'Black':'Red')+' wins':(chk?'Check! ':'')+(turn==='w'?'Red':'Black')+' to move'+(busy?' (thinking…)':'');
   const lines=[];for(let r=0;r<10;r++)lines.push([X(0),Y(r),X(8),Y(r)]);
@@ -62,7 +72,8 @@ export default function App(){
         <div className="row">{PIECES.map(p=><button key={p} className={pal===p?'on':''} onClick={()=>setPal(p)} style={{color:red(p)?'#f77':'#ddd'}}>{glyph(p)}</button>)}
           <button className={pal==='x'?'on':''} onClick={()=>setPal('x')}>Erase</button></div>
         <div className="row"><select value={turn} onChange={e=>setTurn(e.target.value)}><option value="w">Red to move</option><option value="b">Black to move</option></select>
-          <button onClick={()=>setB(Array(90).fill(''))}>Clear</button></div></>}
+          <button onClick={()=>setB(Array(90).fill(''))}>Clear</button></div>
+        <div className="row">Shift all: <button onClick={()=>shift(0,-1)}>←</button><button onClick={()=>shift(0,1)}>→</button><button onClick={()=>shift(-1,0)}>↑</button><button onClick={()=>shift(1,0)}>↓</button></div></>}
       <div className="row"><input value={fen} onChange={e=>setFen(e.target.value)} placeholder="FEN"/>
         <button onClick={()=>load(fen)}>Load</button><button onClick={()=>setFen(toFen(b,turn))}>Get</button></div>
       <label>Image to position: <input type="file" accept="image/*" onChange={e=>scan(e.target.files[0])}/></label>

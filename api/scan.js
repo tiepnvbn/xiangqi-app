@@ -12,7 +12,7 @@ function toFen(t){
 }
 const GEMINI_MODELS=[process.env.GEMINI_MODEL,'gemini-3.8-flash','gemini-3.5-flash-lite','gemini-3-flash-preview'].filter(Boolean);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-async function gemini(image){
+async function gemini(image,prompt=PROMPT){
   let err='Gemini did not respond. Please try again.',think=true;const t0=Date.now();
   for(const model of GEMINI_MODELS){
     for(let attempt=0;attempt<2;attempt++){
@@ -23,7 +23,7 @@ async function gemini(image){
       try{
         r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{method:'POST',signal:AbortSignal.timeout(25000),
           headers:{'content-type':'application/json','x-goog-api-key':process.env.GEMINI_API_KEY},
-          body:JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:image}},{text:PROMPT}]}],generationConfig:gc})});
+          body:JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:image}},{text:prompt}]}],generationConfig:gc})});
         j=await r.json().catch(()=>({}));
       }catch(e){err='Gemini took too long to respond. Please try again.';break}  // timeout -> next model
       if(r.ok)return (j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('');
@@ -38,7 +38,7 @@ async function gemini(image){
   }
   throw new Error(err);
 }
-async function claude(image){
+async function claude(image,prompt=PROMPT){
   const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
     headers:{'content-type':'application/json','x-api-key':process.env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'},
     body:JSON.stringify({model:process.env.ANTHROPIC_MODEL||'claude-sonnet-5-5',max_tokens:300,messages:[{role:'user',content:[
@@ -48,10 +48,17 @@ async function claude(image){
 }
 export default async function handler(req,res){
   if(req.method!=='POST')return res.status(405).json({error:'POST only'});
-  const{image}=req.body||{};if(!image)return res.status(400).json({error:'no image'});
+  const{image,mode,n}=req.body||{};if(!image)return res.status(400).json({error:'no image'});
   const run=process.env.GEMINI_API_KEY?gemini:process.env.ANTHROPIC_API_KEY?claude:null;
   if(!run)return res.status(500).json({error:'No API key set on the server. Add GEMINI_API_KEY (free) in your environment variables and redeploy.'});
-  try{const t=await run(image);
+  try{
+    if(mode==='tiles'){
+      const t=await run(image,`The image is a contact sheet of ${n} numbered tiles. Each tile shows one Xiangqi (Chinese chess) piece. For each tile, in order 1..${n}, give the single Chinese character printed on the piece (e.g. 帥 將 仕 士 相 象 傌 馬 俥 車 炮 砲 兵 卒). Use "?" if unreadable. Return ONLY JSON: {"chars":["..."]} with exactly ${n} entries.`);
+      let o;try{o=JSON.parse((t.match(/\{[\s\S]*\}/)||[''])[0])}catch{}
+      if(!Array.isArray(o?.chars))return res.status(422).json({error:'Could not read the piece tiles'});
+      return res.json({chars:o.chars.map(String)});
+    }
+    const t=await run(image);
     const fen=toFen(t);
     if(!fen)return res.status(422).json({error:'Could not read a position from this image'});
     res.json({fen});

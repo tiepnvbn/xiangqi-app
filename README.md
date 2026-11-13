@@ -23,3 +23,9 @@ Repetition/perpetual-check draw rules, board flipping for Black, ONNX in-browser
 
 ## Scan is slow / times out
 Set `GEMINI_MODEL=gemini-3.5-flash-lite` in Vercel for faster (slightly less accurate) scans. `vercel.json` raises the function limit to 60s.
+
+## Photo/screenshot scan (hybrid)
+`src/vision.js` finds the piece circles locally (gradient Hough transform), fits the 9x10 lattice, decides red/black by disc colour and
+sends only a small contact sheet of cropped pieces to `/api/scan` (`mode: 'tiles'`) so Gemini just reads each character.
+Positions therefore never depend on the model. If detection is not confident (e.g. faint printed scans), it falls back to the full-image scan.
+Tested on 6 board styles (flat screenshots, wood, dark, pink); printed/scanned diagrams use the fallback.
