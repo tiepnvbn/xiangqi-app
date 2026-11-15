@@ -67,7 +67,7 @@ export default function App(){
   return <div className="wrap">
     <svg viewBox="0 0 460 510" width="460">
       {lines.map((l,i)=><line key={i} x1={l[0]} y1={l[1]} x2={l[2]} y2={l[3]} stroke="#5a3a1a" strokeWidth="1.5"/>)}
-      <text x="130" y="285" fontSize="24" fill="#5a3a1a">楚 河</text><text x="270" y="285" fontSize="24" fill="#5a3a1a">漢 界</text>
+      <text x="130" y="285" fontSize="24" fill="#5a3a1a">Tiep</text><text x="270" y="285" fontSize="24" fill="#5a3a1a">Net</text>
       {last&&<><circle cx={X(last[0]%9)} cy={Y(last[0]/9|0)} r="22" fill="none" stroke="#c9a000" strokeWidth="3" strokeDasharray="5 4"/>
         <circle cx={X(last[1]%9)} cy={Y(last[1]/9|0)} r="27" fill="rgba(255,214,0,.35)" stroke="#e6b800" strokeWidth="3"/></>}
       {atk.map(i=><circle key={'a'+i} cx={X(i%9)} cy={Y(i/9|0)} r="26" fill="none" stroke="#e53935" strokeWidth="3" strokeDasharray="4 3"/>)}
