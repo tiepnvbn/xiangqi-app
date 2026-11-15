@@ -57,7 +57,7 @@ export function detectCore(rgba,W,H){
   const cut=gm>=12?(fr[gi]+fr[gi-1])/2:Infinity;P.forEach(q=>{q.rs=q.fr>cut?100:0});
   P.sort((a,b)=>a.y-b.y||a.x-b.x);
   const g=fitGrid(P,G,W,H);if(g.fit<0.8||!g.cols.length||!g.rows.length)return null;
-  P.forEach((q,i)=>{q.kx=g.kx[i];q.ky=g.ky[i]});return{P,g,W,H}}
+  P.forEach((q,i)=>{q.kx=g.kx[i];q.ky=g.ky[i]});return{P,g,W,H,rgba}}
 
 const T={'帥':['K',1],'帅':['K',1],'將':['K',0],'将':['K',0],'仕':['A',1],'士':['A',0],'相':['B',1],'象':['B',0],'傌':['N',1],'馬':['N'],'马':['N'],
   '俥':['R',1],'車':['R'],'车':['R'],'炮':['C'],'砲':['C'],'兵':['P',1],'卒':['P',0]};
@@ -86,7 +86,77 @@ export async function detect(file){
   const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d',{willReadFrequently:true});
   x.fillStyle='#fff';x.fillRect(0,0,W,H);x.drawImage(bmp,0,0,W,H);
   const d=detectCore(x.getImageData(0,0,W,H).data,W,H);if(!d)return null;
+  d.makeSheet=()=>{
   const N=d.P.length,COLS=8,CW=80,CH=96,sc=document.createElement('canvas');sc.width=COLS*CW;sc.height=Math.ceil(N/COLS)*CH;
   const g=sc.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,sc.width,sc.height);g.fillStyle='#000';g.font='bold 14px sans-serif';
   d.P.forEach((p,i)=>{const cx=(i%COLS)*CW,cy=((i/COLS)|0)*CH,h=p.r*1.15/s;g.fillText(String(i+1),cx+4,cy+14);g.drawImage(bmp,p.x/s-h,p.y/s-h,2*h,2*h,cx+4,cy+18,72,72)});
-  d.sheet=sc.toDataURL('image/jpeg',0.9).split(',')[1];return d}
+    return sc.toDataURL('image/jpeg',0.9).split(',')[1]};
+  return d}
+
+// ---- local glyph recognition (no network) ----
+const samp=(a,W,H,x,y)=>{x=Math.min(Math.max(x,0),W-1.001);y=Math.min(Math.max(y,0),H-1.001);const x0=x|0,y0=y|0,fx=x-x0,fy=y-y0,o=[0,0,0];
+  for(let c=0;c<3;c++){const i=(y0*W+x0)*4+c;o[c]=(a[i]*(1-fx)+a[i+4]*fx)*(1-fy)+(a[i+W*4]*(1-fx)+a[i+W*4+4]*fx)*fy}return o};
+export const GN=20;
+// feature = "ink strength" map (distance of each pixel from the disc's fill colour), zero-mean & unit length. sx,sy: shift in grid cells.
+export function glyphVec(rgba,W,H,q,sx=0,sy=0){
+  const half=0.8*q.r,px=[];
+  for(let y=Math.max(0,Math.floor(q.y-q.r));y<=Math.min(H-1,q.y+q.r);y++)for(let x=Math.max(0,Math.floor(q.x-q.r));x<=Math.min(W-1,q.x+q.r);x++)
+    if((x-q.x)**2+(y-q.y)**2<=(0.85*q.r)**2){const i=(y*W+x)*4;px.push([rgba[i],rgba[i+1],rgba[i+2]])}
+  const f=[0,1,2].map(c=>med(px.map(v=>v[c]))),v=new Float32Array(GN*GN),cell=2*half/GN;
+  for(let j=0;j<GN;j++)for(let i=0;i<GN;i++){const dx=((i+0.5)/GN*2-1)*half,dy=((j+0.5)/GN*2-1)*half;if(dx*dx+dy*dy>half*half)continue;
+    const s=samp(rgba,W,H,q.x+dx+sx*cell,q.y+dy+sy*cell);v[j*GN+i]=Math.hypot(s[0]-f[0],s[1]-f[1],s[2]-f[2])}
+  const nz=Array.from(v).filter(x=>x>0).sort((a,b)=>a-b),sc=Math.max(nz[Math.floor(nz.length*0.95)]||0,30);
+  let m=0;for(let i=0;i<v.length;i++){v[i]=Math.min(1,v[i]/sc);m+=v[i]}m/=v.length;
+  let nn=0;for(let i=0;i<v.length;i++){v[i]-=m;nn+=v[i]*v[i]}nn=Math.sqrt(nn)||1;for(let i=0;i<v.length;i++)v[i]/=nn;return v}
+export const dot=(a,b)=>{let s=0;for(let i=0;i<a.length;i++)s+=a[i]*b[i];return s};
+export function glyphVecs(rgba,W,H,q){const o=[];for(const sy of[-1,0,1])for(const sx of[-1,0,1])o.push(glyphVec(rgba,W,H,q,sx,sy));return o}
+
+// ---- placement rules + count limits ----
+export const CLS=['K','A','B','N','R','C','P'],CAP={K:1,A:2,B:2,N:2,R:2,C:2,P:5};
+// rank = distance from the side's own back rank (0..9); c = column 0..8
+export function allowed(cls,rank,c){
+  if(cls==='K')return c>=3&&c<=5&&rank<=2;
+  if(cls==='A')return(rank===1&&c===4)||((rank===0||rank===2)&&(c===3||c===5));
+  if(cls==='B')return((rank===0||rank===4)&&(c===2||c===6))||(rank===2&&(c===0||c===4||c===8));
+  if(cls==='P')return rank>=3&&(rank>=5||c%2===0);
+  return true}
+// Minimum-cost assignment (Hungarian, rectangular n<=m). cost[i][j]
+function hungarian(a){const n=a.length,m=a[0].length,u=Array(n+1).fill(0),v=Array(m+1).fill(0),p=Array(m+1).fill(0),way=Array(m+1).fill(0);
+  for(let i=1;i<=n;i++){p[0]=i;let j0=0;const minv=Array(m+1).fill(Infinity),used=Array(m+1).fill(false);
+    do{used[j0]=true;const i0=p[j0];let d=Infinity,j1=0;
+      for(let j=1;j<=m;j++)if(!used[j]){const cur=a[i0-1][j-1]-u[i0]-v[j];if(cur<minv[j]){minv[j]=cur;way[j]=j0}if(minv[j]<d){d=minv[j];j1=j}}
+      for(let j=0;j<=m;j++)if(used[j]){u[p[j]]+=d;v[j]-=d}else minv[j]-=d;j0=j1}while(p[j0]!==0);
+    do{const j1=way[j0];p[j0]=p[j1];j0=j1}while(j0)}
+  const r=Array(n).fill(-1);for(let j=1;j<=m;j++)if(p[j])r[p[j]-1]=j-1;return r}
+// scores[i][cls] = similarity; pos[i]=[rank,c]. Returns {cls:[...], bad, total} for one side.
+export function assignSide(scores,pos){
+  const slots=[];for(const c of CLS)for(let k=0;k<CAP[c];k++)slots.push(c);
+  if(scores.length>slots.length)return null;
+  const BIG=10,cost=scores.map((s,i)=>slots.map(c=>allowed(c,pos[i][0],pos[i][1])?-s[c]-(c==='K'?3:0):BIG)); // every side has exactly one general: bonus forces the K slot to be used
+  if(!cost.length)return{cls:[],bad:0,total:0};
+  const r=hungarian(cost);let tot=0,bad=0;r.forEach((j,i)=>{tot+=cost[i][j]+(slots[j]==='K'?3:0);if(cost[i][j]>=BIG)bad++});
+  return{cls:r.map(j=>slots[j]),bad,total:-tot}}
+
+export const decodeTemplates=raw=>raw.map(t=>{const b=atob(t.d),v=new Float32Array(GN*GN);for(let i=0;i<v.length;i++)v[i]=((b.charCodeAt(i)<<24)>>24)*t.s;return{cls:t.c,v}});
+// Fully local recognition. Returns null if red/black cannot be told apart. TP = decoded templates.
+export function recognize(d,TP){
+  const{P,g,W,H,rgba}=d,isRed=i=>P[i].rs>35;
+  if(!P.some(p=>p.rs>35)||!P.some(p=>p.rs<=35))return null;
+  const V=P.map(q=>glyphVecs(rgba,W,H,q)),R=V.map(vs=>vs.map(v=>Float32Array.from(v).reverse())); // R: same glyphs turned 180 degrees (board seen from the other side)
+  const sim=(i,v0)=>{let m=-1;for(const v of V[i])m=Math.max(m,dot(v,v0));for(const v of R[i])m=Math.max(m,dot(v,v0)-0.05);return m};
+  const S0=P.map((q,i)=>{const o=Object.fromEntries(CLS.map(c=>[c,-1]));for(const m of TP){const s=sim(i,m.v);if(s>o[m.cls])o[m.cls]=s}return o});
+  const S=S0.map((o,i)=>{const grp=P.map((u,j)=>j).filter(j=>isRed(j)===isRed(i)&&(j===i||sim(i,V[j][4])>0.85));
+    return Object.fromEntries(CLS.map(c=>[c,grp.reduce((a,j)=>a+S0[j][c],0)/grp.length]))});
+  const lineBest=Math.max(1,g.cols[0].sc+g.rows[0].sc),H_=[];
+  for(const flip of[false,true])for(const a of g.cols.slice(0,4))for(const b of g.rows.slice(0,4)){
+    const cells=P.map(q=>{const c=q.kx+a.off,r=q.ky+b.off;return flip?[9-r,8-c]:[r,c]});
+    let tot=0,bad=0;const cls=Array(P.length).fill('?');
+    for(const red of[true,false]){const idx=P.map((q,i)=>i).filter(i=>isRed(i)===red);
+      const as=assignSide(idx.map(i=>S[i]),idx.map(i=>[red?9-cells[i][0]:cells[i][0],cells[i][1]]));if(!as){bad+=99;continue}
+      as.cls.forEach((c,k)=>cls[idx[k]]=c);tot+=as.total;bad+=as.bad}
+    if(new Set(cells.map(c=>c[0]*9+c[1])).size<cells.length)bad+=99;
+    H_.push({score:tot/P.length-0.5*bad+0.3*Math.max(0,a.sc+b.sc)/lineBest,bad,cells,cls,flip})}
+  H_.sort((x,y)=>y.score-x.score);const h=H_[0],sims=P.map((q,i)=>S[i][h.cls[i]]);
+  const board=Array(90).fill('');P.forEach((q,i)=>{const[r,c]=h.cells[i];board[r*9+c]=isRed(i)?h.cls[i]:h.cls[i].toLowerCase()});
+  const unsure=P.map((q,i)=>{const[r,c]=h.cells[i],rank=isRed(i)?9-r:r;let alt=-1;for(const k of CLS)if(k!==h.cls[i]&&allowed(k,rank,c))alt=Math.max(alt,S[i][k]);return sims[i]-alt<0.05||sims[i]<0.3});
+  return{board,unsure:unsure.map((u,i)=>u?h.cells[i][0]*9+h.cells[i][1]:-1).filter(x=>x>=0),bad:h.bad,minSim:Math.min(...sims),meanSim:sims.reduce((a,b)=>a+b,0)/sims.length,margin:H_.length>1?h.score-H_[1].score:1,flipped:h.flip}}

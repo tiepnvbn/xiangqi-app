@@ -35,3 +35,24 @@ function nm(b,side,d,a,be,ply){const ms=legal(b,side);if(!ms.length)return -9999
 ms.sort((x,y)=>cv(b,y)-cv(b,x));for(const m of ms){const s=-nm(apply(b,m),side==='w'?'b':'w',d-1,-be,-a,ply+1);if(s>=be)return be;if(s>a)a=s}return a}
 export function best(b,side,depth,noise=0){const ms=legal(b,side);if(!ms.length)return null;ms.sort((x,y)=>cv(b,y)-cv(b,x));
 let bm=ms[0],bs=-Infinity;for(const m of ms){const s=-nm(apply(b,m),side==='w'?'b':'w',depth-1,-1e9,noise||bs===-Infinity?1e9:-bs,1)+Math.random()*noise;if(s>bs){bs=s;bm=m}}return bm}
+
+// ---- extra rules: check info, repetition, perpetual check, draws ----
+export const kingOf=(b,turn)=>b.indexOf(turn==='w'?'K':'k');
+// squares of the pieces currently giving check to the side to move (includes the opposing general in a "flying general" face-off)
+export function checkers(b,turn){const k=kingOf(b,turn);if(k<0)return[];
+  const o=pseudo(b,turn==='w'?'b':'w').filter(m=>m[1]===k).map(m=>m[0]),ok2=b.indexOf(turn==='w'?'k':'K');
+  if(ok2>=0&&ok2%9===k%9){let free=true;for(let j=Math.min(k,ok2)+9;j<Math.max(k,ok2);j+=9)if(b[j]){free=false;break}if(free)o.push(ok2)}return o}
+// tl = [{b,turn,cap}] from the oldest known position to the current one (cap = the move that led here captured a piece).
+// Returns null while the game goes on, otherwise {text, winner:'w'|'b'|null}.
+export function outcome(tl){
+  const c=tl.length-1,cur=tl[c];
+  if(!cur.b.some(p=>'rncpRNCP'.includes(p)))return{text:'Draw: no attacking pieces left',winner:null};
+  let q=0;for(let i=c;i>0&&!tl[i].cap;i--)q++;if(q>=120)return{text:'Draw: 60 moves without a capture',winner:null};
+  const key=toFen(cur.b,cur.turn),same=[];for(let i=0;i<=c;i++)if(toFen(tl[i].b,tl[i].turn)===key)same.push(i);
+  if(same.length>=3){const p=same[same.length-2];let moverCur=true,moverOther=true;
+    for(let k=p+1;k<=c;k++){const g=inCheck(tl[k].b,tl[k].turn);if((c-k)%2===0){if(!g)moverCur=false}else if(!g)moverOther=false}
+    const stm=cur.turn,mover=stm==='w'?'b':'w',name=s=>s==='w'?'Red':'Black';
+    if(moverCur&&!moverOther)return{text:`${name(mover)} loses: perpetual check (repeated checking is not allowed)`,winner:stm};
+    if(moverOther&&!moverCur)return{text:`${name(stm)} loses: perpetual check (repeated checking is not allowed)`,winner:mover};
+    return{text:'Draw: the same position occurred 3 times',winner:null}}
+  return null}

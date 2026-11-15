@@ -5,3 +5,4 @@ button,select,input{padding:7px 10px;border-radius:6px;border:1px solid #555;bac
 button{cursor:pointer}button:hover{background:#3d372f}button.on{background:#a33;border-color:#c55}
 .row{display:flex;flex-wrap:wrap;gap:6px}.row>input{flex:1;min-width:0}
 svg{max-width:100%;height:auto;background:#e8c98a;border-radius:8px}.msg{color:#f0c36b;min-height:20px}
+.warn{background:#8e1b1b;color:#fff;padding:8px 10px;border-radius:6px;font-weight:600}.note{color:#ffb74d;font-size:14px}

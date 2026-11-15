@@ -9,8 +9,9 @@ Push to Git, import in Vercel, then add `GEMINI_API_KEY` (free: create one at ht
 Photo scan uses `api/scan.js` (Vercel function). On Netlify, port it to a Netlify Function. Without the key, everything else still works.
 
 ## Structure
-- `src/xq.js` rules (legal moves, check, flying general, mate = no legal moves), FEN, alpha-beta search
-- `src/engine.worker.js` Web Worker running the built-in engine
+- `src/xq.js` rules for the UI: legal moves, check/attackers, flying general, FEN, repetition + perpetual-check + draw rules (`outcome`)
+- `src/engine.js` the built-in engine (make/unmake, iterative-deepening PVS alpha-beta, transposition table, quiescence, killer/history ordering, repetition-aware)
+- `src/engine.worker.js` Web Worker running the engine
 - `src/App.jsx` board, edit mode, FEN, scan UI
 - `api/scan.js` image -> FEN via Gemini (free) or Claude vision
 
@@ -29,3 +30,16 @@ Set `GEMINI_MODEL=gemini-3.5-flash-lite` in Vercel for faster (slightly less acc
 sends only a small contact sheet of cropped pieces to `/api/scan` (`mode: 'tiles'`) so Gemini just reads each character.
 Positions therefore never depend on the model. If detection is not confident (e.g. faint printed scans), it falls back to the full-image scan.
 Tested on 6 board styles (flat screenshots, wood, dark, pink); printed/scanned diagrams use the fallback.
+
+## On-device recognition (no network)
+`src/vision.js` also recognises the characters locally: each piece is compared with `src/templates.json` (108 labelled piece images from 6 board styles),
+then placement rules (general in palace, advisors/elephants on their points, pawn rules) and piece-count limits pick the best reading and also decide
+board orientation/alignment. Pieces it is unsure about get an orange ring. Gemini is only used when the local result is not confident.
+To teach it a new board style, add labelled tiles to `templates.json` (format: `{c: class letter, s: scale, d: base64 int8 vector}`).
+
+## Engine levels and rules
+Levels: Beginner, Easy (shallow + random mistakes), Medium (~0.5s), Hard (~1.5s, about 7 moves deep), Expert (~4s), Master (~10s).
+Verified: perft(1..4) = 44 / 1,920 / 79,666 / 3,290,240 and identical move lists to `xq.js` on thousands of random positions.
+Rules: check, checkmate/stalemate (loss), flying general, 3-fold repetition = draw, **perpetual check loses** (the side that checks every move of the cycle),
+no-capture 60-move draw, no attacking pieces = draw. Not implemented: perpetual *chase* rules (repeated chasing is treated like normal repetition).
+The built-in engine is much stronger than a simple depth-limited search but far weaker than Pikafish; see "Upgrading to Pikafish" above.
