@@ -112,14 +112,16 @@ export function think(req){
   if(!roots.length)return null;
   for(let i=roots.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[roots[i],roots[j]]=[roots[j],roots[i]]}
   if(roots.length===1)return{move:[roots[0]&127,roots[0]>>7],depth:0,nodes:0,ms:0};
+  // soft penalty for steering into a position that already occurred (keeps the engine from drifting into repetition / chase losses)
+  const pen=new Map();for(const m of roots){make(m,0);let c=0;for(let j=hp;j>=0;j--)if(HL[j]===hL&&HH[j]===hH)c++;unmake(m,0);pen.set(m,c*40)}
   if(cfg.noise){deadline=Infinity;let bm=roots[0],bs=-INF;
-    for(const m of roots){make(m,0);pushH(0);const s=-search(cfg.depth-1,-INF,INF,1)+Math.random()*cfg.noise;hp--;unmake(m,0);if(s>bs){bs=s;bm=m}}
+    for(const m of roots){make(m,0);pushH(0);const s=-search(cfg.depth-1,-INF,INF,1)+Math.random()*cfg.noise-pen.get(m);hp--;unmake(m,0);if(s>bs){bs=s;bm=m}}
     return{move:[bm&127,bm>>7],depth:cfg.depth,nodes,ms:Date.now()-t0}}
   deadline=t0+cfg.ms;let best=roots[0],bestScore=0,done=0;
   for(let d=1;d<=cfg.depth;d++){let alpha=-INF,ib=roots[0],is=-INF;
     for(let i=0;i<roots.length;i++){const m=roots[i];make(m,0);pushH(0);let sc;
       if(i===0)sc=-search(d-1,-INF,-alpha,1);else{sc=-search(d-1,-alpha-1,-alpha,1);if(sc>alpha&&!stop)sc=-search(d-1,-INF,-alpha,1)}
-      hp--;unmake(m,0);if(stop)break;if(sc>is){is=sc;ib=m;if(sc>alpha)alpha=sc}}
+      hp--;unmake(m,0);if(stop)break;sc-=pen.get(m);if(sc>is){is=sc;ib=m;if(sc>alpha)alpha=sc}}
     if(stop)break;best=ib;bestScore=is;done=d;roots.splice(roots.indexOf(ib),1);roots.unshift(ib);
     if(Math.abs(is)>MATE-200||Date.now()-t0>cfg.ms*0.55)break}
   return{move:[best&127,best>>7],depth:done,score:bestScore,nodes,ms:Date.now()-t0}}

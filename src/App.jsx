@@ -1,6 +1,7 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {START,parse,parseLoose,toFen,legal,apply,inCheck,red,pseudo,checkers,kingOf,outcome} from './xq.js';
 import {detect,finishCore,recognize,decodeTemplates} from './vision.js';
+import {notes,gameText} from './notation.js';
 import TPL from './templates.json';
 const TP=decodeTemplates(TPL);
 const GR={r:'車',n:'馬',b:'相',a:'仕',k:'帥',c:'炮',p:'兵'},GB={r:'車',n:'馬',b:'象',a:'士',k:'將',c:'砲',p:'卒'};
@@ -10,10 +11,10 @@ const X=c=>30+c*50,Y=r=>30+r*50,PIECES='KABNRCPkabnrcp'.split('');
 export default function App(){
   const [b,setB]=useState(parse(START).b),[turn,setTurn]=useState('w'),[hist,setHist]=useState([]);
   const [sel,setSel]=useState(null),[mode,setMode]=useState('play'),[lv,setLv]=useState(3),[human,setHuman]=useState('w');
-  const [flags,setFlags]=useState([]),[hasDet,setHasDet]=useState(false),[last,setLast]=useState(null),[cap,setCap]=useState(false),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[pal,setPal]=useState('P'),[fen,setFen]=useState(''),[msg,setMsg]=useState('');
-  const wk=useRef(),job=useRef(0),detRef=useRef(null);
+  const [flags,setFlags]=useState([]),[hasDet,setHasDet]=useState(false),[view,setView]=useState(null),[flip,setFlip]=useState(false),[online,setOnline]=useState(typeof navigator==='undefined'?true:navigator.onLine),[last,setLast]=useState(null),[cap,setCap]=useState(false),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[pal,setPal]=useState('P'),[fen,setFen]=useState(''),[msg,setMsg]=useState('');
+  const wk=useRef(),job=useRef(0),detRef=useRef(null),histRef=useRef(null);
   const ms=useMemo(()=>mode==='play'?legal(b,turn):[],[b,turn,mode]);
-  const tl=useMemo(()=>[...hist.map(h=>({b:h.b,turn:h.turn,cap:h.cap})),{b,turn,cap}],[hist,b,turn,cap]);
+  const states=useMemo(()=>[...hist.map(h=>({b:h.b,turn:h.turn,last:h.last,cap:h.cap})),{b,turn,last,cap}],[hist,b,turn,last,cap]),tl=states;
   const res=useMemo(()=>mode==='play'&&ms.length?outcome(tl):null,[tl,mode,ms]);
   const noMoves=mode==='play'&&!ms.length,over=noMoves||!!res;
   const chk=mode==='play'&&inCheck(b,turn),atk=chk?checkers(b,turn):[],kingIdx=chk?kingOf(b,turn):-1;
@@ -28,6 +29,7 @@ export default function App(){
   },[b,turn,mode,human,lv,over]);
   const click=i=>{
     if(mode==='edit'){setFlags(f=>f.filter(x=>x!==i));const n=b.slice();n[i]=pal==='x'?'':pal;setB(n);return}
+    if(view!==null){setNote('Reviewing an earlier position. Press "Back to game" to continue.');return}
     if(over||busy||turn!==human)return;
     const mine=b[i]&&red(b[i])===(turn==='w');
     if(sel!==null&&ms.some(m=>m[0]===sel&&m[1]===i))return move([sel,i]);
@@ -35,9 +37,9 @@ export default function App(){
     if(sel!==null&&pseudo(b,turn).some(m=>m[0]===sel&&m[1]===i))setNote(chk?'Your general is in check! You must capture the attacker, block the attack, or move the general.':'Illegal: that move would leave your general under attack (or facing the enemy general).');
     else{setNote('');setSel(null)}
   };
-  const load=f=>{const p=parse(f);if(!p)return setMsg('Invalid FEN');setB(p.b);setTurn(p.turn);setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setMsg('')};
-  const undo=()=>{if(!hist.length)return;const k=turn===human&&hist.length>1?2:1,h=hist[hist.length-k];setB(h.b);setTurn(h.turn);setLast(h.last);setCap(h.cap);setHist(hist.slice(0,-k));setSel(null);setNote('')};
-  const play=()=>{setFlags([]);if(!b.includes('K')||!b.includes('k'))return setMsg('Both generals are required.');setMsg('');setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setMode('play')};
+  const load=f=>{const p=parse(f);if(!p)return setMsg('Invalid FEN');setB(p.b);setTurn(p.turn);setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMsg('')};
+  const undo=()=>{if(!hist.length)return;const k=turn===human&&hist.length>1?2:1,h=hist[hist.length-k];setB(h.b);setTurn(h.turn);setLast(h.last);setCap(h.cap);setHist(hist.slice(0,-k));setSel(null);setNote('');setView(null)};
+  const play=()=>{setFlags([]);if(!b.includes('K')||!b.includes('k'))return setMsg('Both generals are required.');setMsg('');setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMode('play')};
   async function scan(file){if(!file)return;setMsg('Detecting pieces…');setFlags([]);
     const t0=performance.now();let d=null,loc=null;
     try{d=await detect(file);if(d)loc=recognize(d,TP)}catch(e){}
@@ -58,6 +60,19 @@ export default function App(){
       setB(p.b);setTurn(p.turn);setMode('edit');setMsg(p.fixed?'Scanned, but some rows looked wrong and were repaired. Check the board carefully, fix mistakes, then press Play.':'Scanned. Fix any mistakes, then press Play.');
     }catch(e){setMsg('Scan failed: '+(e.name==='TimeoutError'?'timed out, please try again':e.message))}}
   const shift=(dr,dc)=>{const n=Array(90).fill('');for(let i=0;i<90;i++)if(b[i]){const r=(i/9|0)+dr,c=i%9+dc;if(r<0||r>9||c<0||c>8)return setMsg('Cannot shift further');n[r*9+c]=b[i]}setB(n)};
+  const n=states.length-1,cur=view??n,goto=k=>{k=Math.max(0,Math.min(n,k));setView(k===n?null:k);setSel(null)};
+  const sv=view!==null&&mode==='play'?states[Math.min(view,n)]:null,db=sv?sv.b:b,dTurn=sv?sv.turn:turn,dLast=sv?sv.last:last;
+  const dchk=mode==='play'&&inCheck(db,dTurn),datk=dchk?checkers(db,dTurn):[],dKing=dchk?kingOf(db,dTurn):-1,dWho=dTurn==='w'?'Red':'Black';
+  const fl=flip!==(human==='b'),px=i=>X(fl?8-i%9:i%9),py=i=>Y(fl?9-((i/9)|0):((i/9)|0));
+  const mv=useMemo(()=>notes(states),[states]);
+  const resStr=res?(res.winner==='w'?'1-0':res.winner==='b'?'0-1':'1/2-1/2'):noMoves?(turn==='w'?'0-1':'1-0'):'*';
+  const exportText=()=>gameText(states,resStr,new Date().toISOString().slice(0,10).replace(/-/g,'.'));
+  const copyMoves=async()=>{try{await navigator.clipboard.writeText(exportText());setMsg('Game copied to the clipboard.')}catch(e){setMsg('Could not copy; use Download game instead.')}};
+  const downloadGame=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([exportText()],{type:'text/plain'}));a.download='xiangqi-game.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};
+  const playFrom=()=>{if(view===null)return;const st=states[view];setHist(hist.slice(0,view));setB(st.b);setTurn(st.turn);setLast(st.last);setCap(!!st.cap);setView(null);setSel(null);setNote('')};
+  useEffect(()=>{const on=()=>setOnline(true),off=()=>setOnline(false);window.addEventListener('online',on);window.addEventListener('offline',off);return()=>{window.removeEventListener('online',on);window.removeEventListener('offline',off)}},[]);
+  useEffect(()=>{const h=e=>{if(mode!=='play'||/INPUT|SELECT|TEXTAREA/.test(e.target.tagName))return;if(e.key==='ArrowLeft'){e.preventDefault();goto(cur-1)}else if(e.key==='ArrowRight'){e.preventDefault();goto(cur+1)}};window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h)});
+  useEffect(()=>{const el=histRef.current;if(el&&view===null)el.scrollTop=el.scrollHeight},[n,view]);
   const targets=sel!==null?ms.filter(m=>m[0]===sel).map(m=>m[1]):[];
   const who=turn==='w'?'Red':'Black',other=turn==='w'?'Black':'Red';
   const status=mode==='edit'?'Edit mode':noMoves?(chk?`Checkmate! ${other} wins`:`${who} has no legal moves: ${other} wins`):res?res.text:`${who} to move`+(busy?' (thinking…)':'');
@@ -67,24 +82,30 @@ export default function App(){
   return <div className="wrap">
     <svg viewBox="0 0 460 510" width="460">
       {lines.map((l,i)=><line key={i} x1={l[0]} y1={l[1]} x2={l[2]} y2={l[3]} stroke="#5a3a1a" strokeWidth="1.5"/>)}
-      <text x="130" y="285" fontSize="24" fill="#5a3a1a">Tiep</text><text x="270" y="285" fontSize="24" fill="#5a3a1a">Net</text>
-      {last&&<><circle cx={X(last[0]%9)} cy={Y(last[0]/9|0)} r="22" fill="none" stroke="#c9a000" strokeWidth="3" strokeDasharray="5 4"/>
-        <circle cx={X(last[1]%9)} cy={Y(last[1]/9|0)} r="27" fill="rgba(255,214,0,.35)" stroke="#e6b800" strokeWidth="3"/></>}
-      {atk.map(i=><circle key={'a'+i} cx={X(i%9)} cy={Y(i/9|0)} r="26" fill="none" stroke="#e53935" strokeWidth="3" strokeDasharray="4 3"/>)}
-      {kingIdx>=0&&<circle cx={X(kingIdx%9)} cy={Y(kingIdx/9|0)} r="26" fill="rgba(229,57,53,.35)" stroke="#e53935" strokeWidth="4"><animate attributeName="r" values="24;31;24" dur="0.9s" repeatCount="indefinite"/></circle>}
-      {b.map((p,i)=>{const r=i/9|0,c=i%9;return <g key={i} onClick={()=>click(i)} style={{cursor:'pointer'}}>
-        <circle cx={X(c)} cy={Y(r)} r="23" fill="transparent"/>
-        {p&&<><circle cx={X(c)} cy={Y(r)} r="21" fill="#f6e3b4" stroke={sel===i?'#2a7':flags.includes(i)?'#f80':red(p)?'#b22':'#222'} strokeWidth={sel===i||flags.includes(i)?4:2}/>
-        <text x={X(c)} y={Y(r)+8} textAnchor="middle" fontSize="24" fontWeight="700" fill={red(p)?'#b22':'#222'}>{glyph(p)}</text></>}
-        {targets.includes(i)&&<circle cx={X(c)} cy={Y(r)} r="7" fill="#2a7" opacity=".7" pointerEvents="none"/>}</g>})}
+      <text x="130" y="285" fontSize="24" fill="#5a3a1a">{fl?'漢 界':'楚 河'}</text><text x="270" y="285" fontSize="24" fill="#5a3a1a">{fl?'楚 河':'漢 界'}</text>
+      {dLast&&<><circle cx={px(dLast[0])} cy={py(dLast[0])} r="22" fill="none" stroke="#c9a000" strokeWidth="3" strokeDasharray="5 4"/>
+        <circle cx={px(dLast[1])} cy={py(dLast[1])} r="27" fill="rgba(255,214,0,.35)" stroke="#e6b800" strokeWidth="3"/></>}
+      {datk.map(i=><circle key={'a'+i} cx={px(i)} cy={py(i)} r="26" fill="none" stroke="#e53935" strokeWidth="3" strokeDasharray="4 3"/>)}
+      {dKing>=0&&<circle cx={px(dKing)} cy={py(dKing)} r="26" fill="rgba(229,57,53,.35)" stroke="#e53935" strokeWidth="4"><animate attributeName="r" values="24;31;24" dur="0.9s" repeatCount="indefinite"/></circle>}
+      {db.map((p,i)=>{const cx=px(i),cy=py(i);return <g key={i} onClick={()=>click(i)} style={{cursor:'pointer'}}>
+        <circle cx={cx} cy={cy} r="23" fill="transparent"/>
+        {p&&<><circle cx={cx} cy={cy} r="21" fill="#f6e3b4" stroke={sel===i?'#2a7':!sv&&flags.includes(i)?'#f80':red(p)?'#b22':'#222'} strokeWidth={sel===i||(!sv&&flags.includes(i))?4:2}/>
+        <text x={cx} y={cy+8} textAnchor="middle" fontSize="24" fontWeight="700" fill={red(p)?'#b22':'#222'}>{glyph(p)}</text></>}
+        {!sv&&targets.includes(i)&&<circle cx={cx} cy={cy} r="7" fill="#2a7" opacity=".7" pointerEvents="none"/>}</g>})}
     </svg>
     <div className="panel">
-      <h2 style={{margin:0}}>象棋 Xiangqi</h2><div className="msg">{status}</div>{chk&&!noMoves&&<div className="warn">⚠ {who} general is in check!{turn===human?' Capture the attacker, block, or move the general.':''}</div>}{note&&<div className="note">{note}</div>}<div className="msg">{msg}</div>
+      <h2 style={{margin:0}}>象棋 Xiangqi</h2><div className="msg">{status}</div>{sv&&<div className="note">Reviewing move {view} of {n}. Arrow keys ◀ ▶ step through the game.</div>}{dchk&&(sv||!noMoves)&&<div className="warn">⚠ {dWho} general is in check!{!sv&&turn===human?' Capture the attacker, block, or move the general.':''}</div>}{!online&&<div className="note">Offline: playing and photo scanning on this device still work; only the AI fallback needs a connection.</div>}{note&&<div className="note">{note}</div>}<div className="msg">{msg}</div>
       <div className="row"><button className={mode==='play'?'on':''} onClick={play}>Play vs engine</button>
-        <button className={mode==='edit'?'on':''} onClick={()=>setMode('edit')}>Set up position</button></div>
+        <button className={mode==='edit'?'on':''} onClick={()=>{setView(null);setMode('edit')}}>Set up position</button></div>
       <div className="row"><select value={lv} onChange={e=>setLv(+e.target.value)}>{LEVELS.map((l,i)=><option key={i} value={i}>{l}</option>)}</select>
         <select value={human} onChange={e=>setHuman(e.target.value)}><option value="w">You: Red</option><option value="b">You: Black</option></select></div>
-      <div className="row"><button onClick={undo}>Undo</button><button onClick={()=>{setMode('play');load(START)}}>New game</button></div>
+      <div className="row"><button onClick={undo}>Undo</button><button onClick={()=>setFlip(f=>!f)}>Flip board</button><button onClick={()=>{setMode('play');load(START)}}>New game</button></div>
+      {mode==='play'&&<><div className="hist" ref={histRef}>{mv.length===0&&<span className="note">No moves yet</span>}
+        {mv.map((t,i)=>{const first=states[0].turn,mover=i%2===0?first:first==='w'?'b':'w';
+          return <span key={i}>{mover==='w'&&<span className="no">{Math.floor((i+(first==='w'?0:1))/2)+1}.</span>}<button className={'mv'+(cur===i+1?' cur':'')} onClick={()=>goto(i+1)}>{t}</button></span>})}</div>
+        <div className="row"><button onClick={()=>goto(0)}>⏮</button><button onClick={()=>goto(cur-1)}>◀</button><button onClick={()=>goto(cur+1)}>▶</button><button onClick={()=>goto(n)}>⏭</button>{sv&&<button onClick={()=>setView(null)}>Back to game</button>}</div>
+        {sv&&<div className="row"><button onClick={playFrom}>Play from this position</button></div>}
+        <div className="row"><button onClick={copyMoves}>Copy moves</button><button onClick={downloadGame}>Download game</button></div></>}
       {mode==='edit'&&<>
         <div className="row">{PIECES.map(p=><button key={p} className={pal===p?'on':''} onClick={()=>setPal(p)} style={{color:red(p)?'#f77':'#ddd'}}>{glyph(p)}</button>)}
           <button className={pal==='x'?'on':''} onClick={()=>setPal('x')}>Erase</button></div>

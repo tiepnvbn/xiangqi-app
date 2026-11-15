@@ -43,3 +43,13 @@ Verified: perft(1..4) = 44 / 1,920 / 79,666 / 3,290,240 and identical move lists
 Rules: check, checkmate/stalemate (loss), flying general, 3-fold repetition = draw, **perpetual check loses** (the side that checks every move of the cycle),
 no-capture 60-move draw, no attacking pieces = draw. Not implemented: perpetual *chase* rules (repeated chasing is treated like normal repetition).
 The built-in engine is much stronger than a simple depth-limited search but far weaker than Pikafish; see "Upgrading to Pikafish" above.
+
+## Game features
+- **Board flip**: "Flip board" button; the board also turns automatically when you choose to play Black.
+- **Move history**: coordinate notation (`Ch2-e2`, `x` capture, `+` check, `#` mate). Click any move (or use the arrow keys / buttons) to review that position,
+  then "Back to game" or "Play from this position" to branch from it. "Copy moves" / "Download game" export a text record with the start FEN.
+- **Perpetual chase (simplified)**: besides perpetual check, repeatedly *chasing* (each move creates a new threat to capture an undefended or higher-value piece)
+  loses on the third repetition; generals and pawns never count as chasers and uncrossed pawns are not valid targets. Check outranks chase; equal behaviour = draw.
+  This models the usual Asian-rules idea but not every official exception, so treat it as a practical approximation.
+- **Offline (PWA)**: a service worker (vite-plugin-pwa) precaches the app, engine, icons and recognition data after the first visit; the app can be installed from the browser menu.
+  Playing, review and on-device photo scanning work offline; only the optional AI fallback needs a connection.

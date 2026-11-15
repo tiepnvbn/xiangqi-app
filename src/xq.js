@@ -42,6 +42,25 @@ export const kingOf=(b,turn)=>b.indexOf(turn==='w'?'K':'k');
 export function checkers(b,turn){const k=kingOf(b,turn);if(k<0)return[];
   const o=pseudo(b,turn==='w'?'b':'w').filter(m=>m[1]===k).map(m=>m[0]),ok2=b.indexOf(turn==='w'?'k':'K');
   if(ok2>=0&&ok2%9===k%9){let free=true;for(let j=Math.min(k,ok2)+9;j<Math.max(k,ok2);j+=9)if(b[j]){free=false;break}if(free)o.push(ok2)}return o}
+// ---- perpetual chase (simplified Asian-rules model) ----
+// A "chase" = a move that creates a NEW threat to capture an enemy piece profitably: the target is not a general, not an
+// uncrossed pawn, is either undefended or worth more than the attacker, and cannot simply capture the attacker back.
+// Generals and pawns never count as chasers.
+const CV={r:9,c:4.5,n:4,a:2,b:2,p:1,k:100};
+function chaseTargets(b,x){const opp=x==='w'?'b':'w',set=new Set(),back=new Set();
+  for(const q of legal(b,opp))if(b[q[1]])back.add(q[0]*100+q[1]);
+  for(const m of legal(b,x)){const tg=b[m[1]];if(!tg)continue;const at=b[m[0]].toLowerCase(),tt=tg.toLowerCase();
+    if(at==='k'||at==='p'||tt==='k')continue;
+    if(tt==='p'&&!(red(tg)?(m[1]/9|0)<=4:(m[1]/9|0)>=5))continue;
+    if(back.has(m[1]*100+m[0]))continue;
+    if(legal(apply(b,m),opp).some(q=>q[1]===m[1])&&CV[at]>=CV[tt])continue;
+    set.add(m[1])}
+  return set}
+// what the side that just moved did in state k: 'check' | 'chase' | 'none'
+function moveKind(tl,k){const x=tl[k].turn==='w'?'b':'w';if(inCheck(tl[k].b,tl[k].turn))return'check';
+  const before=chaseTargets(tl[k-1].b,x),after=chaseTargets(tl[k].b,x);for(const t of after)if(!before.has(t))return'chase';return'none'}
+const rankOf=kinds=>kinds.length&&kinds.every(k=>k==='check')?2:kinds.length&&kinds.every(k=>k!=='none')&&kinds.includes('chase')?1:0;
+
 // tl = [{b,turn,cap}] from the oldest known position to the current one (cap = the move that led here captured a piece).
 // Returns null while the game goes on, otherwise {text, winner:'w'|'b'|null}.
 export function outcome(tl){
@@ -49,10 +68,10 @@ export function outcome(tl){
   if(!cur.b.some(p=>'rncpRNCP'.includes(p)))return{text:'Draw: no attacking pieces left',winner:null};
   let q=0;for(let i=c;i>0&&!tl[i].cap;i--)q++;if(q>=120)return{text:'Draw: 60 moves without a capture',winner:null};
   const key=toFen(cur.b,cur.turn),same=[];for(let i=0;i<=c;i++)if(toFen(tl[i].b,tl[i].turn)===key)same.push(i);
-  if(same.length>=3){const p=same[same.length-2];let moverCur=true,moverOther=true;
-    for(let k=p+1;k<=c;k++){const g=inCheck(tl[k].b,tl[k].turn);if((c-k)%2===0){if(!g)moverCur=false}else if(!g)moverOther=false}
-    const stm=cur.turn,mover=stm==='w'?'b':'w',name=s=>s==='w'?'Red':'Black';
-    if(moverCur&&!moverOther)return{text:`${name(mover)} loses: perpetual check (repeated checking is not allowed)`,winner:stm};
-    if(moverOther&&!moverCur)return{text:`${name(stm)} loses: perpetual check (repeated checking is not allowed)`,winner:mover};
+  if(same.length>=3){const p=same[same.length-2],mine=[],theirs=[];
+    for(let k=p+1;k<=c;k++)((c-k)%2===0?mine:theirs).push(moveKind(tl,k));
+    const rm=rankOf(mine),rt=rankOf(theirs),stm=cur.turn,mover=stm==='w'?'b':'w',name=s=>s==='w'?'Red':'Black';
+    if(rm!==rt){const loser=rm>rt?mover:stm,r=Math.max(rm,rt);
+      return{text:`${name(loser)} loses: perpetual ${r===2?'check':'chase'} (it is not allowed to repeat it)`,winner:loser==='w'?'b':'w'}}
     return{text:'Draw: the same position occurred 3 times',winner:null}}
   return null}
