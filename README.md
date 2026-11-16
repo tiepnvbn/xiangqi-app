@@ -53,3 +53,14 @@ The built-in engine is much stronger than a simple depth-limited search but far 
   This models the usual Asian-rules idea but not every official exception, so treat it as a practical approximation.
 - **Offline (PWA)**: a service worker (vite-plugin-pwa) precaches the app, engine, icons and recognition data after the first visit; the app can be installed from the browser menu.
   Playing, review and on-device photo scanning work offline; only the optional AI fallback needs a connection.
+
+## Scan accuracy and learning
+- `src/templates.json` holds 122 labelled piece images from 7 board styles. Tested leave-one-style-out (train on 6 styles, test on the 7th) about 96% of pieces are right
+  and the orange rings flag most mistakes. Pieces rendered from standard Chinese fonts were tried as extra training data and did **not** help reliably, so they are not used.
+- A small tie-breaker prefers pieces on their starting squares (puzzle positions often keep them there).
+- Tap an orange-ringed piece in "Set up position" to get the likely alternatives; any piece you change is stored in the browser (localStorage) when you press Play
+  and used on later scans ("Forget learned corrections" clears it). To improve the built-in memory, send new board images with the correct position.
+
+## Layout
+The board scales with the screen (never taller than the viewport): board left / panel right on desktop and landscape, board on top / panel below on portrait tablets and phones.
+Cannon and soldier points have the usual corner marks.

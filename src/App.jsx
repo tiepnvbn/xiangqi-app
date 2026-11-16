@@ -1,6 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {START,parse,parseLoose,toFen,legal,apply,inCheck,red,pseudo,checkers,kingOf,outcome} from './xq.js';
-import {detect,finishCore,recognize,decodeTemplates} from './vision.js';
+import {detect,finishCore,recognize,decodeTemplates,collectCorrections,fixCell,loadUserTemplates,addUserTemplates,clearUserTemplates} from './vision.js';
 import {notes,gameText} from './notation.js';
 import TPL from './templates.json';
 const TP=decodeTemplates(TPL);
@@ -8,11 +8,14 @@ const GR={r:'車',n:'馬',b:'相',a:'仕',k:'帥',c:'炮',p:'兵'},GB={r:'車',n
 const glyph=p=>(red(p)?GR:GB)[p.toLowerCase()];
 const LEVELS=['Beginner','Easy','Medium','Hard','Expert (~4s)','Master (~10s)'];
 const X=c=>30+c*50,Y=r=>30+r*50,PIECES='KABNRCPkabnrcp'.split('');
+// the little corner marks printed at the cannon and soldier points of a real board
+const MARKS=[[2,1],[2,7],[7,1],[7,7],...[3,6].flatMap(r=>[0,2,4,6,8].map(c=>[r,c]))];
+const markPath=(r,c)=>{const x=X(c),y=Y(r),g=5,l=10;let d='';for(const sx of[-1,1])for(const sy of[-1,1]){if((c===0&&sx<0)||(c===8&&sx>0))continue;d+=`M${x+sx*(g+l)},${y+sy*g}H${x+sx*g}V${y+sy*(g+l)}`}return d};
 export default function App(){
   const [b,setB]=useState(parse(START).b),[turn,setTurn]=useState('w'),[hist,setHist]=useState([]);
   const [sel,setSel]=useState(null),[mode,setMode]=useState('play'),[lv,setLv]=useState(3),[human,setHuman]=useState('w');
-  const [flags,setFlags]=useState([]),[hasDet,setHasDet]=useState(false),[view,setView]=useState(null),[flip,setFlip]=useState(false),[online,setOnline]=useState(typeof navigator==='undefined'?true:navigator.onLine),[last,setLast]=useState(null),[cap,setCap]=useState(false),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[pal,setPal]=useState('P'),[fen,setFen]=useState(''),[msg,setMsg]=useState('');
-  const wk=useRef(),job=useRef(0),detRef=useRef(null),histRef=useRef(null);
+  const [flags,setFlags]=useState([]),[fix,setFix]=useState(null),[userT,setUserT]=useState(()=>decodeTemplates(loadUserTemplates())),[hasDet,setHasDet]=useState(false),[view,setView]=useState(null),[flip,setFlip]=useState(false),[online,setOnline]=useState(typeof navigator==='undefined'?true:navigator.onLine),[last,setLast]=useState(null),[cap,setCap]=useState(false),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[pal,setPal]=useState('P'),[fen,setFen]=useState(''),[msg,setMsg]=useState('');
+  const wk=useRef(),job=useRef(0),detRef=useRef(null),scanInfo=useRef(null),histRef=useRef(null);
   const ms=useMemo(()=>mode==='play'?legal(b,turn):[],[b,turn,mode]);
   const states=useMemo(()=>[...hist.map(h=>({b:h.b,turn:h.turn,last:h.last,cap:h.cap})),{b,turn,last,cap}],[hist,b,turn,last,cap]),tl=states;
   const res=useMemo(()=>mode==='play'&&ms.length?outcome(tl):null,[tl,mode,ms]);
@@ -28,7 +31,9 @@ export default function App(){
     return()=>{job.current++;setBusy(false)};
   },[b,turn,mode,human,lv,over]);
   const click=i=>{
-    if(mode==='edit'){setFlags(f=>f.filter(x=>x!==i));const n=b.slice();n[i]=pal==='x'?'':pal;setB(n);return}
+    if(mode==='edit'){const inf=scanInfo.current&&scanInfo.current[i];
+      if(pal!=='x'&&b[i]&&flags.includes(i)&&inf){setFix(i);return}   // unsure piece: offer the likely alternatives
+      setFlags(f=>f.filter(x=>x!==i));const n=b.slice();n[i]=pal==='x'?'':pal;setB(n);setFix(null);return}
     if(view!==null){setNote('Reviewing an earlier position. Press "Back to game" to continue.');return}
     if(over||busy||turn!==human)return;
     const mine=b[i]&&red(b[i])===(turn==='w');
@@ -39,12 +44,16 @@ export default function App(){
   };
   const load=f=>{const p=parse(f);if(!p)return setMsg('Invalid FEN');setB(p.b);setTurn(p.turn);setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMsg('')};
   const undo=()=>{if(!hist.length)return;const k=turn===human&&hist.length>1?2:1,h=hist[hist.length-k];setB(h.b);setTurn(h.turn);setLast(h.last);setCap(h.cap);setHist(hist.slice(0,-k));setSel(null);setNote('');setView(null)};
-  const play=()=>{setFlags([]);if(!b.includes('K')||!b.includes('k'))return setMsg('Both generals are required.');setMsg('');setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMode('play')};
+  const play=()=>{setFlags([]);if(!b.includes('K')||!b.includes('k'))return setMsg('Both generals are required.');const learned=scanInfo.current?collectCorrections(scanInfo.current,b):[];scanInfo.current=null;setFix(null);
+    setMsg('');if(learned.length){addUserTemplates(learned);setUserT(decodeTemplates(loadUserTemplates()));setMsg(`Learned ${learned.length} correction${learned.length>1?'s':''} from this scan; similar boards should read better next time.`)}
+    setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMode('play')};
+  const applyFix=c=>{if(fix===null)return;setB(fixCell(b,fix,c,pal));setFlags(f=>f.filter(x=>x!==fix));setFix(null)};
   async function scan(file){if(!file)return;setMsg('Detecting pieces…');setFlags([]);
     const t0=performance.now();let d=null,loc=null;
-    try{d=await detect(file);if(d)loc=recognize(d,TP)}catch(e){}
+    scanInfo.current=null;setFix(null);
+    try{d=await detect(file);if(d)loc=recognize(d,[...TP,...userT])}catch(e){}
     detRef.current=d;setHasDet(!!d);const secs=((performance.now()-t0)/1000).toFixed(1);
-    if(loc&&loc.bad===0){setB(loc.board);setTurn('w');setFlags(loc.unsure);setMode('edit');
+    if(loc&&loc.bad===0){scanInfo.current=loc.info;setB(loc.board);setTurn('w');setFlags(loc.unsure);setMode('edit');
       setMsg(`Recognised ${d.P.length} pieces on this device in ${secs}s.`+(loc.unsure.length?' Orange rings = please double-check.':'')+(loc.flipped?' (Board was rotated; shown with Red at the bottom.)':'')+' Fix any mistakes, then press Play.');return}
     setMsg(`Could not read the board on this device (${secs}s). Trying AI scan, up to ~30s…`);return fullScan(file)}
   async function aiReread(){const d=detRef.current;if(!d)return;setMsg('Asking Gemini to read the pieces (up to ~30s)…');
@@ -79,20 +88,22 @@ export default function App(){
   const lines=[];for(let r=0;r<10;r++)lines.push([X(0),Y(r),X(8),Y(r)]);
   for(let c=0;c<9;c++){if(c===0||c===8)lines.push([X(c),Y(0),X(c),Y(9)]);else lines.push([X(c),Y(0),X(c),Y(4)],[X(c),Y(5),X(c),Y(9)])}
   [[3,0,5,2],[5,0,3,2],[3,7,5,9],[5,7,3,9]].forEach(([a,r,c,s])=>lines.push([X(a),Y(r),X(c),Y(s)]));
-  return <div className="wrap">
-    <svg viewBox="0 0 460 510" width="460">
+  return <div className="wrap"><div className="boardbox">
+    <svg className="board" viewBox="0 0 460 510">
       {lines.map((l,i)=><line key={i} x1={l[0]} y1={l[1]} x2={l[2]} y2={l[3]} stroke="#5a3a1a" strokeWidth="1.5"/>)}
+      {MARKS.map(([r,c])=><path key={'m'+r+c} d={markPath(r,c)} fill="none" stroke="#5a3a1a" strokeWidth="1.5"/>)}
       {/* <text x="130" y="285" fontSize="24" fill="#5a3a1a">{fl?'漢 界':'楚 河'}</text><text x="270" y="285" fontSize="24" fill="#5a3a1a">{fl?'楚 河':'漢 界'}</text> */}
       {dLast&&<><circle cx={px(dLast[0])} cy={py(dLast[0])} r="22" fill="none" stroke="#c9a000" strokeWidth="3" strokeDasharray="5 4"/>
         <circle cx={px(dLast[1])} cy={py(dLast[1])} r="27" fill="rgba(255,214,0,.35)" stroke="#e6b800" strokeWidth="3"/></>}
       {datk.map(i=><circle key={'a'+i} cx={px(i)} cy={py(i)} r="26" fill="none" stroke="#e53935" strokeWidth="3" strokeDasharray="4 3"/>)}
       {dKing>=0&&<circle cx={px(dKing)} cy={py(dKing)} r="26" fill="rgba(229,57,53,.35)" stroke="#e53935" strokeWidth="4"><animate attributeName="r" values="24;31;24" dur="0.9s" repeatCount="indefinite"/></circle>}
+      {fix!==null&&<circle cx={px(fix)} cy={py(fix)} r="28" fill="none" stroke="#1e88e5" strokeWidth="3" strokeDasharray="5 3"/>}
       {db.map((p,i)=>{const cx=px(i),cy=py(i);return <g key={i} onClick={()=>click(i)} style={{cursor:'pointer'}}>
         <circle cx={cx} cy={cy} r="23" fill="transparent"/>
         {p&&<><circle cx={cx} cy={cy} r="21" fill="#f6e3b4" stroke={sel===i?'#2a7':!sv&&flags.includes(i)?'#f80':red(p)?'#b22':'#222'} strokeWidth={sel===i||(!sv&&flags.includes(i))?4:2}/>
         <text x={cx} y={cy+8} textAnchor="middle" fontSize="24" fontWeight="700" fill={red(p)?'#b22':'#222'}>{glyph(p)}</text></>}
         {!sv&&targets.includes(i)&&<circle cx={cx} cy={cy} r="7" fill="#2a7" opacity=".7" pointerEvents="none"/>}</g>})}
-    </svg>
+    </svg></div>
     <div className="panel">
       <h2 style={{margin:0}}>象棋 Xiangqi</h2><div className="msg">{status}</div>{sv&&<div className="note">Reviewing move {view} of {n}. Arrow keys ◀ ▶ step through the game.</div>}{dchk&&(sv||!noMoves)&&<div className="warn">⚠ {dWho} general is in check!{!sv&&turn===human?' Capture the attacker, block, or move the general.':''}</div>}{!online&&<div className="note">Offline: playing and photo scanning on this device still work; only the AI fallback needs a connection.</div>}{note&&<div className="note">{note}</div>}<div className="msg">{msg}</div>
       <div className="row"><button className={mode==='play'?'on':''} onClick={play}>Play vs engine</button>
@@ -107,10 +118,14 @@ export default function App(){
         {sv&&<div className="row"><button onClick={playFrom}>Play from this position</button></div>}
         <div className="row"><button onClick={copyMoves}>Copy moves</button><button onClick={downloadGame}>Download game</button></div></>}
       {mode==='edit'&&<>
+        {fix!==null&&b[fix]&&scanInfo.current&&scanInfo.current[fix]&&<div className="fixbox"><div className="note">Unsure piece: what is it?</div>
+          <div className="row">{[...new Set([scanInfo.current[fix].cls,...scanInfo.current[fix].alts])].map(c=><button key={c} className={b[fix].toUpperCase()===c?'on':''} onClick={()=>applyFix(c)}>{glyph(b[fix]===b[fix].toUpperCase()?c:c.toLowerCase())}</button>)}
+            <button onClick={()=>applyFix('pal')}>Use palette piece</button><button onClick={()=>applyFix('x')}>Remove</button><button onClick={()=>setFix(null)}>Cancel</button></div></div>}
         <div className="row">{PIECES.map(p=><button key={p} className={pal===p?'on':''} onClick={()=>setPal(p)} style={{color:red(p)?'#f77':'#ddd'}}>{glyph(p)}</button>)}
           <button className={pal==='x'?'on':''} onClick={()=>setPal('x')}>Erase</button></div>
         <div className="row"><select value={turn} onChange={e=>setTurn(e.target.value)}><option value="w">Red to move</option><option value="b">Black to move</option></select>
           <button onClick={()=>setB(Array(90).fill(''))}>Clear</button>{hasDet&&<button onClick={aiReread}>Re-read with AI</button>}</div>
+        {userT.length>0&&<div className="row"><button onClick={()=>{clearUserTemplates();setUserT([]);setMsg('Learned corrections cleared.')}}>Forget learned corrections ({userT.length})</button></div>}
         <div className="row">Shift all: <button onClick={()=>shift(0,-1)}>←</button><button onClick={()=>shift(0,1)}>→</button><button onClick={()=>shift(-1,0)}>↑</button><button onClick={()=>shift(1,0)}>↓</button></div></>}
       <div className="row"><input value={fen} onChange={e=>setFen(e.target.value)} placeholder="FEN"/>
         <button onClick={()=>load(fen)}>Load</button><button onClick={()=>setFen(toFen(b,turn))}>Get</button></div>

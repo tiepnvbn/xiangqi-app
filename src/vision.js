@@ -120,6 +120,9 @@ export function allowed(cls,rank,c){
   if(cls==='B')return((rank===0||rank===4)&&(c===2||c===6))||(rank===2&&(c===0||c===4||c===8));
   if(cls==='P')return rank>=3&&(rank>=5||c%2===0);
   return true}
+// small tie-breaker: puzzle positions often keep pieces on their starting squares
+const BACK='RNBAKABNR';
+export const startBonus=(cls,rank,c)=>(rank===0&&BACK[c]===cls)||(rank===2&&cls==='C'&&(c===1||c===7))||(rank===3&&cls==='P'&&c%2===0)?0.04:0;
 // Minimum-cost assignment (Hungarian, rectangular n<=m). cost[i][j]
 function hungarian(a){const n=a.length,m=a[0].length,u=Array(n+1).fill(0),v=Array(m+1).fill(0),p=Array(m+1).fill(0),way=Array(m+1).fill(0);
   for(let i=1;i<=n;i++){p[0]=i;let j0=0;const minv=Array(m+1).fill(Infinity),used=Array(m+1).fill(false);
@@ -132,9 +135,9 @@ function hungarian(a){const n=a.length,m=a[0].length,u=Array(n+1).fill(0),v=Arra
 export function assignSide(scores,pos){
   const slots=[];for(const c of CLS)for(let k=0;k<CAP[c];k++)slots.push(c);
   if(scores.length>slots.length)return null;
-  const BIG=10,cost=scores.map((s,i)=>slots.map(c=>allowed(c,pos[i][0],pos[i][1])?-s[c]-(c==='K'?3:0):BIG)); // every side has exactly one general: bonus forces the K slot to be used
+  const BIG=10,cost=scores.map((s,i)=>slots.map(c=>allowed(c,pos[i][0],pos[i][1])?-s[c]-(c==='K'?3:0)-startBonus(c,pos[i][0],pos[i][1]):BIG)); // every side has exactly one general: bonus forces the K slot to be used
   if(!cost.length)return{cls:[],bad:0,total:0};
-  const r=hungarian(cost);let tot=0,bad=0;r.forEach((j,i)=>{tot+=cost[i][j]+(slots[j]==='K'?3:0);if(cost[i][j]>=BIG)bad++});
+  const r=hungarian(cost);let tot=0,bad=0;r.forEach((j,i)=>{tot+=cost[i][j]+(slots[j]==='K'?3:0)+startBonus(slots[j],pos[i][0],pos[i][1]);if(cost[i][j]>=BIG)bad++});
   return{cls:r.map(j=>slots[j]),bad,total:-tot}}
 
 export const decodeTemplates=raw=>raw.map(t=>{const b=atob(t.d),v=new Float32Array(GN*GN);for(let i=0;i<v.length;i++)v[i]=((b.charCodeAt(i)<<24)>>24)*t.s;return{cls:t.c,v}});
@@ -159,4 +162,22 @@ export function recognize(d,TP){
   H_.sort((x,y)=>y.score-x.score);const h=H_[0],sims=P.map((q,i)=>S[i][h.cls[i]]);
   const board=Array(90).fill('');P.forEach((q,i)=>{const[r,c]=h.cells[i];board[r*9+c]=isRed(i)?h.cls[i]:h.cls[i].toLowerCase()});
   const unsure=P.map((q,i)=>{const[r,c]=h.cells[i],rank=isRed(i)?9-r:r;let alt=-1;for(const k of CLS)if(k!==h.cls[i]&&allowed(k,rank,c))alt=Math.max(alt,S[i][k]);return sims[i]-alt<0.05||sims[i]<0.3});
-  return{board,unsure:unsure.map((u,i)=>u?h.cells[i][0]*9+h.cells[i][1]:-1).filter(x=>x>=0),bad:h.bad,minSim:Math.min(...sims),meanSim:sims.reduce((a,b)=>a+b,0)/sims.length,margin:H_.length>1?h.score-H_[1].score:1,flipped:h.flip}}
+  const info={};P.forEach((q,i)=>{const[r,c]=h.cells[i],rank=isRed(i)?9-r:r;
+    info[r*9+c]={cls:h.cls[i],alts:CLS.filter(k=>k!==h.cls[i]&&allowed(k,rank,c)).sort((x,y)=>S[i][y]-S[i][x]).slice(0,3),vec:V[i][4]}});
+  return{info,board,unsure:unsure.map((u,i)=>u?h.cells[i][0]*9+h.cells[i][1]:-1).filter(x=>x>=0),bad:h.bad,minSim:Math.min(...sims),meanSim:sims.reduce((a,b)=>a+b,0)/sims.length,margin:H_.length>1?h.score-H_[1].score:1,flipped:h.flip}}
+
+// ---- learning from the user's corrections ----
+export function packTemplate(cls,v){let m=0;for(const x of v)m=Math.max(m,Math.abs(x));const sc=m/127||1;let t='';
+  for(const x of v)t+=String.fromCharCode(Math.max(-127,Math.min(127,Math.round(x/sc)))&255);return{c:cls,s:+sc.toPrecision(6),d:btoa(t)}}
+// pieces the user changed after a scan (info = recognize().info, board = final board) -> new labelled templates
+export function collectCorrections(info,board){const out=[],keys=Object.keys(info);
+  if(keys.filter(k=>board[+k]).length<0.7*keys.length||board.filter(Boolean).length>keys.length+2)return out;   // the board was rebuilt, not corrected
+  for(const k in info){const f=board[+k];if(!f)continue;const cls=f.toUpperCase();if(cls!==info[k].cls)out.push(packTemplate(cls,info[k].vec))}return out}
+// choice: a class letter, 'x' (remove) or 'pal' (use the palette piece); the piece keeps its colour when a class is chosen
+export function fixCell(board,cell,choice,pal){const n=board.slice(),cur=n[cell];if(!cur)return n;
+  if(choice==='x'){n[cell]='';return n}if(choice==='pal'){n[cell]=pal&&pal!=='x'?pal:cur;return n}
+  n[cell]=cur===cur.toUpperCase()?choice:choice.toLowerCase();return n}
+const UKEY='xq_user_templates_v1';
+export function loadUserTemplates(){try{return JSON.parse(localStorage.getItem(UKEY)||'[]')}catch(e){return[]}}
+export function addUserTemplates(list){try{const all=[...loadUserTemplates(),...list].slice(-400);localStorage.setItem(UKEY,JSON.stringify(all));return all.length}catch(e){return 0}}
+export function clearUserTemplates(){try{localStorage.removeItem(UKEY)}catch(e){}}
