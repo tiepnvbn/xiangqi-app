@@ -48,7 +48,7 @@ export default function App(){
     setMsg('');if(learned.length){addUserTemplates(learned);setUserT(decodeTemplates(loadUserTemplates()));setMsg(`Learned ${learned.length} correction${learned.length>1?'s':''} from this scan; similar boards should read better next time.`)}
     setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMode('play')};
   const applyFix=c=>{if(fix===null)return;setB(fixCell(b,fix,c,pal));setFlags(f=>f.filter(x=>x!==fix));setFix(null)};
-  async function scan(file){if(!file)return;setMsg('Detecting pieces…');setFlags([]);
+  async function scan(file){if(!file)return;setMsg('Detecting pieces…');setFlags([]);setHist([]);setLast(null);setCap(false);setView(null);setSel(null);setNote('');
     const t0=performance.now();let d=null,loc=null;
     scanInfo.current=null;setFix(null);
     try{d=await detect(file);if(d)loc=recognize(d,[...TP,...userT])}catch(e){}
@@ -70,7 +70,7 @@ export default function App(){
     }catch(e){setMsg('Scan failed: '+(e.name==='TimeoutError'?'timed out, please try again':e.message))}}
   const shift=(dr,dc)=>{const n=Array(90).fill('');for(let i=0;i<90;i++)if(b[i]){const r=(i/9|0)+dr,c=i%9+dc;if(r<0||r>9||c<0||c>8)return setMsg('Cannot shift further');n[r*9+c]=b[i]}setB(n)};
   const n=states.length-1,cur=view??n,goto=k=>{k=Math.max(0,Math.min(n,k));setView(k===n?null:k);setSel(null)};
-  const sv=view!==null&&mode==='play'?states[Math.min(view,n)]:null,db=sv?sv.b:b,dTurn=sv?sv.turn:turn,dLast=sv?sv.last:last;
+  const sv=view!==null&&mode==='play'?states[Math.min(view,n)]:null,db=sv?sv.b:b,dTurn=sv?sv.turn:turn,dLast=mode==='play'?(sv?sv.last:last):null;
   const dchk=mode==='play'&&inCheck(db,dTurn),datk=dchk?checkers(db,dTurn):[],dKing=dchk?kingOf(db,dTurn):-1,dWho=dTurn==='w'?'Red':'Black';
   const fl=flip!==(human==='b'),px=i=>X(fl?8-i%9:i%9),py=i=>Y(fl?9-((i/9)|0):((i/9)|0));
   const mv=useMemo(()=>notes(states),[states]);
@@ -92,7 +92,7 @@ export default function App(){
     <svg className="board" viewBox="0 0 460 510">
       {lines.map((l,i)=><line key={i} x1={l[0]} y1={l[1]} x2={l[2]} y2={l[3]} stroke="#5a3a1a" strokeWidth="1.5"/>)}
       {MARKS.map(([r,c])=><path key={'m'+r+c} d={markPath(r,c)} fill="none" stroke="#5a3a1a" strokeWidth="1.5"/>)}
-      {/* <text x="130" y="285" fontSize="24" fill="#5a3a1a">{fl?'漢 界':'楚 河'}</text><text x="270" y="285" fontSize="24" fill="#5a3a1a">{fl?'楚 河':'漢 界'}</text> */}
+      <text x="130" y="285" fontSize="24" fill="#5a3a1a">{fl?'漢 界':'楚 河'}</text><text x="270" y="285" fontSize="24" fill="#5a3a1a">{fl?'楚 河':'漢 界'}</text>
       {dLast&&<><circle cx={px(dLast[0])} cy={py(dLast[0])} r="22" fill="none" stroke="#c9a000" strokeWidth="3" strokeDasharray="5 4"/>
         <circle cx={px(dLast[1])} cy={py(dLast[1])} r="27" fill="rgba(255,214,0,.35)" stroke="#e6b800" strokeWidth="3"/></>}
       {datk.map(i=><circle key={'a'+i} cx={px(i)} cy={py(i)} r="26" fill="none" stroke="#e53935" strokeWidth="3" strokeDasharray="4 3"/>)}

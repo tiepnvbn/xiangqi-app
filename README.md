@@ -64,3 +64,8 @@ The built-in engine is much stronger than a simple depth-limited search but far 
 ## Layout
 The board scales with the screen (never taller than the viewport): board left / panel right on desktop and landscape, board on top / panel below on portrait tablets and phones.
 Cannon and soldier points have the usual corner marks.
+
+## Scan pipeline note
+Images are shrunk to 400px wide with an explicit area-average (`boxDownscale` in `src/vision.js`) instead of the browser's own resampling, so a given image gives the same
+result on every device. (The browser's default downscale of large images is blurry/aliased and flipped a close horse-vs-cannon call on one test image.)
+Memory: 130 labelled pieces from 8 board styles. A fresh scan also clears the previous game's history and last-move marks.

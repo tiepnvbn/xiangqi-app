@@ -81,11 +81,21 @@ export function finishCore(d,chars){
   return{board,warn:bad,ambiguous:combos.length>1&&combos[1].s>0.8*c0.s,flipped:flip}}
 
 // ---- browser part ----
+// Area-average downscale (same on every browser/device, so results do not depend on the browser's own resampling).
+export function boxDownscale(src,sw,sh,W,H){const out=new Uint8ClampedArray(W*H*4);
+  for(let y=0;y<H;y++){const y0=Math.floor(y*sh/H),y1=Math.min(sh,Math.max(y0+1,Math.floor((y+1)*sh/H)));
+    for(let x=0;x<W;x++){const x0=Math.floor(x*sw/W),x1=Math.min(sw,Math.max(x0+1,Math.floor((x+1)*sw/W)));let r=0,g=0,b=0,n=0;
+      for(let yy=y0;yy<y1;yy++){let i=(yy*sw+x0)*4;for(let xx=x0;xx<x1;xx++,i+=4){r+=src[i];g+=src[i+1];b+=src[i+2];n++}}
+      const o=(y*W+x)*4;out[o]=r/n;out[o+1]=g/n;out[o+2]=b/n;out[o+3]=255}}
+  return out}
 export async function detect(file){
   const bmp=await createImageBitmap(file),s=Math.min(1,400/bmp.width),W=Math.round(bmp.width*s),H=Math.round(bmp.height*s);
-  const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d',{willReadFrequently:true});
-  x.fillStyle='#fff';x.fillRect(0,0,W,H);x.drawImage(bmp,0,0,W,H);
-  const d=detectCore(x.getImageData(0,0,W,H).data,W,H);if(!d)return null;
+  // very large photos: first shrink with the browser's high-quality resampler, then area-average to 400px
+  let sw=bmp.width,sh=bmp.height;const big=sw>1600;if(big){sh=Math.round(sh*1600/sw);sw=1600}
+  const fc=document.createElement('canvas');fc.width=sw;fc.height=sh;const fx=fc.getContext('2d',{willReadFrequently:true});
+  fx.fillStyle='#fff';fx.fillRect(0,0,sw,sh);fx.imageSmoothingEnabled=true;fx.imageSmoothingQuality='high';fx.drawImage(bmp,0,0,sw,sh);
+  const rgba=boxDownscale(fx.getImageData(0,0,sw,sh).data,sw,sh,W,H);
+  const d=detectCore(rgba,W,H);if(!d)return null;
   d.makeSheet=()=>{
   const N=d.P.length,COLS=8,CW=80,CH=96,sc=document.createElement('canvas');sc.width=COLS*CW;sc.height=Math.ceil(N/COLS)*CH;
   const g=sc.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,sc.width,sc.height);g.fillStyle='#000';g.font='bold 14px sans-serif';
