@@ -150,14 +150,15 @@ export function assignSide(scores,pos){
   const r=hungarian(cost);let tot=0,bad=0;r.forEach((j,i)=>{tot+=cost[i][j]+(slots[j]==='K'?3:0)+startBonus(slots[j],pos[i][0],pos[i][1]);if(cost[i][j]>=BIG)bad++});
   return{cls:r.map(j=>slots[j]),bad,total:-tot}}
 
-export const decodeTemplates=raw=>raw.map(t=>{const b=atob(t.d),v=new Float32Array(GN*GN);for(let i=0;i<v.length;i++)v[i]=((b.charCodeAt(i)<<24)>>24)*t.s;return{cls:t.c,v}});
+export const decodeTemplates=(raw,u=false)=>raw.map(t=>{const b=atob(t.d),v=new Float32Array(GN*GN);for(let i=0;i<v.length;i++)v[i]=((b.charCodeAt(i)<<24)>>24)*t.s;return{cls:t.c,v,u}});
 // Fully local recognition. Returns null if red/black cannot be told apart. TP = decoded templates.
 export function recognize(d,TP){
   const{P,g,W,H,rgba}=d,isRed=i=>P[i].rs>35;
   if(!P.some(p=>p.rs>35)||!P.some(p=>p.rs<=35))return null;
   const V=P.map(q=>glyphVecs(rgba,W,H,q)),R=V.map(vs=>vs.map(v=>Float32Array.from(v).reverse())); // R: same glyphs turned 180 degrees (board seen from the other side)
   const sim=(i,v0)=>{let m=-1;for(const v of V[i])m=Math.max(m,dot(v,v0));for(const v of R[i])m=Math.max(m,dot(v,v0)-0.05);return m};
-  const S0=P.map((q,i)=>{const o=Object.fromEntries(CLS.map(c=>[c,-1]));for(const m of TP){const s=sim(i,m.v);if(s>o[m.cls])o[m.cls]=s}return o});
+  const UB=[],S0=P.map((q,i)=>{const ob=Object.fromEntries(CLS.map(c=>[c,-1])),ou=Object.fromEntries(CLS.map(c=>[c,-1]));
+    for(const m of TP){const s=sim(i,m.v),t=m.u?ou:ob;if(s>t[m.cls])t[m.cls]=s}UB.push([ob,ou]);return Object.fromEntries(CLS.map(c=>[c,Math.max(ob[c],ou[c])]))});
   const S=S0.map((o,i)=>{const grp=P.map((u,j)=>j).filter(j=>isRed(j)===isRed(i)&&(j===i||sim(i,V[j][4])>0.85));
     return Object.fromEntries(CLS.map(c=>[c,grp.reduce((a,j)=>a+S0[j][c],0)/grp.length]))});
   const lineBest=Math.max(1,g.cols[0].sc+g.rows[0].sc),H_=[];
@@ -173,21 +174,22 @@ export function recognize(d,TP){
   const board=Array(90).fill('');P.forEach((q,i)=>{const[r,c]=h.cells[i];board[r*9+c]=isRed(i)?h.cls[i]:h.cls[i].toLowerCase()});
   const unsure=P.map((q,i)=>{const[r,c]=h.cells[i],rank=isRed(i)?9-r:r;let alt=-1;for(const k of CLS)if(k!==h.cls[i]&&allowed(k,rank,c))alt=Math.max(alt,S[i][k]);return sims[i]-alt<0.05||sims[i]<0.3});
   const info={};P.forEach((q,i)=>{const[r,c]=h.cells[i],rank=isRed(i)?9-r:r;
-    info[r*9+c]={cls:h.cls[i],alts:CLS.filter(k=>k!==h.cls[i]&&allowed(k,rank,c)).sort((x,y)=>S[i][y]-S[i][x]).slice(0,3),vec:V[i][4]}});
+    info[r*9+c]={cls:h.cls[i],user:UB[i][1][h.cls[i]]>UB[i][0][h.cls[i]]+0.02,alts:CLS.filter(k=>k!==h.cls[i]&&allowed(k,rank,c)).sort((x,y)=>S[i][y]-S[i][x]).slice(0,3),vec:V[i][4]}});
   return{info,board,unsure:unsure.map((u,i)=>u?h.cells[i][0]*9+h.cells[i][1]:-1).filter(x=>x>=0),bad:h.bad,minSim:Math.min(...sims),meanSim:sims.reduce((a,b)=>a+b,0)/sims.length,margin:H_.length>1?h.score-H_[1].score:1,flipped:h.flip}}
 
 // ---- learning from the user's corrections ----
 export function packTemplate(cls,v){let m=0;for(const x of v)m=Math.max(m,Math.abs(x));const sc=m/127||1;let t='';
   for(const x of v)t+=String.fromCharCode(Math.max(-127,Math.min(127,Math.round(x/sc)))&255);return{c:cls,s:+sc.toPrecision(6),d:btoa(t)}}
-// pieces the user changed after a scan (info = recognize().info, board = final board) -> new labelled templates
-export function collectCorrections(info,board){const out=[],keys=Object.keys(info);
+// pieces the user changed after a scan: [{cell, from, to, vec}] (info = recognize().info, board = current board)
+export function corrections(info,board){const out=[],keys=Object.keys(info);
   if(keys.filter(k=>board[+k]).length<0.7*keys.length||board.filter(Boolean).length>keys.length+2)return out;   // the board was rebuilt, not corrected
-  for(const k in info){const f=board[+k];if(!f)continue;const cls=f.toUpperCase();if(cls!==info[k].cls)out.push(packTemplate(cls,info[k].vec))}return out}
+  for(const k of keys){const f=board[+k];if(!f)continue;const to=f.toUpperCase();if(to!==info[k].cls)out.push({cell:+k,from:info[k].cls,to,vec:info[k].vec})}return out}
 // choice: a class letter, 'x' (remove) or 'pal' (use the palette piece); the piece keeps its colour when a class is chosen
 export function fixCell(board,cell,choice,pal){const n=board.slice(),cur=n[cell];if(!cur)return n;
   if(choice==='x'){n[cell]='';return n}if(choice==='pal'){n[cell]=pal&&pal!=='x'?pal:cur;return n}
   n[cell]=cur===cur.toUpperCase()?choice:choice.toLowerCase();return n}
-const UKEY='xq_user_templates_v1';
+const UKEY='xq_user_templates_v2';   // v1 (automatic learning) is discarded: it could store accidental edits
+try{localStorage.removeItem('xq_user_templates_v1')}catch(e){}
 export function loadUserTemplates(){try{return JSON.parse(localStorage.getItem(UKEY)||'[]')}catch(e){return[]}}
 export function addUserTemplates(list){try{const all=[...loadUserTemplates(),...list].slice(-400);localStorage.setItem(UKEY,JSON.stringify(all));return all.length}catch(e){return 0}}
 export function clearUserTemplates(){try{localStorage.removeItem(UKEY)}catch(e){}}

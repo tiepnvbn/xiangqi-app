@@ -1,6 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {START,parse,parseLoose,toFen,legal,apply,inCheck,red,pseudo,checkers,kingOf,outcome} from './xq.js';
-import {detect,finishCore,recognize,decodeTemplates,collectCorrections,fixCell,loadUserTemplates,addUserTemplates,clearUserTemplates} from './vision.js';
+import {detect,finishCore,recognize,decodeTemplates,corrections,packTemplate,fixCell,loadUserTemplates,addUserTemplates,clearUserTemplates} from './vision.js';
 import {notes,gameText} from './notation.js';
 import TPL from './templates.json';
 const TP=decodeTemplates(TPL);
@@ -14,7 +14,7 @@ const markPath=(r,c)=>{const x=X(c),y=Y(r),g=5,l=10;let d='';for(const sx of[-1,
 export default function App(){
   const [b,setB]=useState(parse(START).b),[turn,setTurn]=useState('w'),[hist,setHist]=useState([]);
   const [sel,setSel]=useState(null),[mode,setMode]=useState('play'),[lv,setLv]=useState(3),[human,setHuman]=useState('w');
-  const [flags,setFlags]=useState([]),[fix,setFix]=useState(null),[userT,setUserT]=useState(()=>decodeTemplates(loadUserTemplates())),[hasDet,setHasDet]=useState(false),[view,setView]=useState(null),[flip,setFlip]=useState(false),[online,setOnline]=useState(typeof navigator==='undefined'?true:navigator.onLine),[last,setLast]=useState(null),[cap,setCap]=useState(false),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[pal,setPal]=useState('P'),[fen,setFen]=useState(''),[msg,setMsg]=useState('');
+  const [flags,setFlags]=useState([]),[fix,setFix]=useState(null),[userT,setUserT]=useState(()=>decodeTemplates(loadUserTemplates(),true)),[hasDet,setHasDet]=useState(false),[view,setView]=useState(null),[flip,setFlip]=useState(false),[online,setOnline]=useState(typeof navigator==='undefined'?true:navigator.onLine),[last,setLast]=useState(null),[cap,setCap]=useState(false),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[pal,setPal]=useState(null),[learnedCells,setLearnedCells]=useState([]),[fen,setFen]=useState(''),[msg,setMsg]=useState('');
   const wk=useRef(),job=useRef(0),detRef=useRef(null),scanInfo=useRef(null),histRef=useRef(null);
   const ms=useMemo(()=>mode==='play'?legal(b,turn):[],[b,turn,mode]);
   const states=useMemo(()=>[...hist.map(h=>({b:h.b,turn:h.turn,last:h.last,cap:h.cap})),{b,turn,last,cap}],[hist,b,turn,last,cap]),tl=states;
@@ -31,9 +31,10 @@ export default function App(){
     return()=>{job.current++;setBusy(false)};
   },[b,turn,mode,human,lv,over]);
   const click=i=>{
-    if(mode==='edit'){const inf=scanInfo.current&&scanInfo.current[i];
-      if(pal!=='x'&&b[i]&&flags.includes(i)&&inf){setFix(i);return}   // unsure piece: offer the likely alternatives
-      setFlags(f=>f.filter(x=>x!==i));const n=b.slice();n[i]=pal==='x'?'':pal;setB(n);setFix(null);return}
+    if(mode==='edit'){
+      if(b[i]&&pal!=='x'){setFix(i);return}   // tapping a piece opens a choice panel: nothing is replaced by accident
+      if(pal!=='x'&&!pal){setNote('Choose a piece in the palette first, then tap an empty point.');return}
+      setFlags(f=>f.filter(x=>x!==i));setLearnedCells(f=>f.filter(x=>x!==i));const n=b.slice();n[i]=pal==='x'?'':pal;setB(n);setFix(null);setNote('');return}
     if(view!==null){setNote('Reviewing an earlier position. Press "Back to game" to continue.');return}
     if(over||busy||turn!==human)return;
     const mine=b[i]&&red(b[i])===(turn==='w');
@@ -44,17 +45,18 @@ export default function App(){
   };
   const load=f=>{const p=parse(f);if(!p)return setMsg('Invalid FEN');setB(p.b);setTurn(p.turn);setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMsg('')};
   const undo=()=>{if(!hist.length)return;const k=turn===human&&hist.length>1?2:1,h=hist[hist.length-k];setB(h.b);setTurn(h.turn);setLast(h.last);setCap(h.cap);setHist(hist.slice(0,-k));setSel(null);setNote('');setView(null)};
-  const play=()=>{setFlags([]);if(!b.includes('K')||!b.includes('k'))return setMsg('Both generals are required.');const learned=scanInfo.current?collectCorrections(scanInfo.current,b):[];scanInfo.current=null;setFix(null);
-    setMsg('');if(learned.length){addUserTemplates(learned);setUserT(decodeTemplates(loadUserTemplates()));setMsg(`Learned ${learned.length} correction${learned.length>1?'s':''} from this scan; similar boards should read better next time.`)}
+  const play=()=>{setFlags([]);if(!b.includes('K')||!b.includes('k'))return setMsg('Both generals are required.');scanInfo.current=null;setFix(null);setLearnedCells([]);setMsg('');
     setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMode('play')};
+  const corr=mode==='edit'&&scanInfo.current?corrections(scanInfo.current,b):[];
+  const teach=()=>{const list=corr.map(c=>packTemplate(c.to,c.vec));addUserTemplates(list);setUserT(decodeTemplates(loadUserTemplates(),true));scanInfo.current=null;setMsg(`Saved ${list.length} correction${list.length>1?'s':''} on this device. Use "Forget saved corrections" to undo.`)};
   const applyFix=c=>{if(fix===null)return;setB(fixCell(b,fix,c,pal));setFlags(f=>f.filter(x=>x!==fix));setFix(null)};
   async function scan(file){if(!file)return;setMsg('Detecting pieces…');setFlags([]);setHist([]);setLast(null);setCap(false);setView(null);setSel(null);setNote('');
     const t0=performance.now();let d=null,loc=null;
-    scanInfo.current=null;setFix(null);
+    scanInfo.current=null;setFix(null);setLearnedCells([]);
     try{d=await detect(file);if(d)loc=recognize(d,[...TP,...userT])}catch(e){}
     detRef.current=d;setHasDet(!!d);const secs=((performance.now()-t0)/1000).toFixed(1);
-    if(loc&&loc.bad===0){scanInfo.current=loc.info;setB(loc.board);setTurn('w');setFlags(loc.unsure);setMode('edit');
-      setMsg(`Recognised ${d.P.length} pieces on this device in ${secs}s.`+(loc.unsure.length?' Orange rings = please double-check.':'')+(loc.flipped?' (Board was rotated; shown with Red at the bottom.)':'')+' Fix any mistakes, then press Play.');return}
+    if(loc&&loc.bad===0){scanInfo.current=loc.info;const lc=Object.keys(loc.info).filter(k=>loc.info[k].user).map(Number);setLearnedCells(lc);setB(loc.board);setTurn('w');setFlags(loc.unsure);setMode('edit');
+      setMsg(`Recognised ${d.P.length} pieces on this device in ${secs}s.`+(loc.unsure.length?' Orange rings = please double-check.':'')+(lc.length?` Purple rings: ${lc.length} piece(s) were read using your saved corrections; if one is wrong, press "Forget saved corrections".`:'')+(loc.flipped?' (Board was rotated; shown with Red at the bottom.)':'')+' Tap a piece to change it, then press Play.');return}
     setMsg(`Could not read the board on this device (${secs}s). Trying AI scan, up to ~30s…`);return fullScan(file)}
   async function aiReread(){const d=detRef.current;if(!d)return;setMsg('Asking Gemini to read the pieces (up to ~30s)…');
     try{const r=await fetch('/api/scan',{method:'POST',signal:AbortSignal.timeout(35000),headers:{'content-type':'application/json'},body:JSON.stringify({image:d.makeSheet(),mode:'tiles',n:d.P.length})});
@@ -97,6 +99,7 @@ export default function App(){
         <circle cx={px(dLast[1])} cy={py(dLast[1])} r="27" fill="rgba(255,214,0,.35)" stroke="#e6b800" strokeWidth="3"/></>}
       {datk.map(i=><circle key={'a'+i} cx={px(i)} cy={py(i)} r="26" fill="none" stroke="#e53935" strokeWidth="3" strokeDasharray="4 3"/>)}
       {dKing>=0&&<circle cx={px(dKing)} cy={py(dKing)} r="26" fill="rgba(229,57,53,.35)" stroke="#e53935" strokeWidth="4"><animate attributeName="r" values="24;31;24" dur="0.9s" repeatCount="indefinite"/></circle>}
+      {!sv&&learnedCells.map(i=><circle key={'l'+i} cx={px(i)} cy={py(i)} r="28" fill="none" stroke="#ab47bc" strokeWidth="3" strokeDasharray="3 3"/>)}
       {fix!==null&&<circle cx={px(fix)} cy={py(fix)} r="28" fill="none" stroke="#1e88e5" strokeWidth="3" strokeDasharray="5 3"/>}
       {db.map((p,i)=>{const cx=px(i),cy=py(i);return <g key={i} onClick={()=>click(i)} style={{cursor:'pointer'}}>
         <circle cx={cx} cy={cy} r="23" fill="transparent"/>
@@ -118,17 +121,20 @@ export default function App(){
         {sv&&<div className="row"><button onClick={playFrom}>Play from this position</button></div>}
         <div className="row"><button onClick={copyMoves}>Copy moves</button><button onClick={downloadGame}>Download game</button></div></>}
       {mode==='edit'&&<>
-        {fix!==null&&b[fix]&&scanInfo.current&&scanInfo.current[fix]&&<div className="fixbox"><div className="note">Unsure piece: what is it?</div>
-          <div className="row">{[...new Set([scanInfo.current[fix].cls,...scanInfo.current[fix].alts])].map(c=><button key={c} className={b[fix].toUpperCase()===c?'on':''} onClick={()=>applyFix(c)}>{glyph(b[fix]===b[fix].toUpperCase()?c:c.toLowerCase())}</button>)}
-            <button onClick={()=>applyFix('pal')}>Use palette piece</button><button onClick={()=>applyFix('x')}>Remove</button><button onClick={()=>setFix(null)}>Cancel</button></div></div>}
+        {fix!==null&&b[fix]&&(()=>{const inf=scanInfo.current&&scanInfo.current[fix],isRed=b[fix]===b[fix].toUpperCase(),order=[...new Set([...(inf?[inf.cls,...inf.alts]:[]),...'KABNRCP'])];
+          return <div className="fixbox"><div className="note">{inf&&flags.includes(fix)?'Unsure piece: what is it?':'Change this piece to:'}</div>
+            <div className="row">{order.map(c=><button key={c} className={b[fix].toUpperCase()===c?'on':''} onClick={()=>applyFix(c)}>{glyph(isRed?c:c.toLowerCase())}</button>)}</div>
+            <div className="row"><button disabled={!pal||pal==='x'} onClick={()=>applyFix('pal')}>Use palette piece</button><button onClick={()=>applyFix('x')}>Remove</button><button onClick={()=>setFix(null)}>Cancel</button></div></div>})()}
+        {corr.length>0&&<div className="fixbox"><div className="note">You changed: {corr.map(c=>glyph(b[c.cell]===b[c.cell].toUpperCase()?c.from:c.from.toLowerCase())+' → '+glyph(b[c.cell])).join('   ')}</div>
+          <div className="row"><button onClick={teach}>Teach the app (only if the new piece is right)</button></div></div>}
         <div className="row">{PIECES.map(p=><button key={p} className={pal===p?'on':''} onClick={()=>setPal(p)} style={{color:red(p)?'#f77':'#ddd'}}>{glyph(p)}</button>)}
           <button className={pal==='x'?'on':''} onClick={()=>setPal('x')}>Erase</button></div>
         <div className="row"><select value={turn} onChange={e=>setTurn(e.target.value)}><option value="w">Red to move</option><option value="b">Black to move</option></select>
           <button onClick={()=>setB(Array(90).fill(''))}>Clear</button>{hasDet&&<button onClick={aiReread}>Re-read with AI</button>}</div>
-        {userT.length>0&&<div className="row"><button onClick={()=>{clearUserTemplates();setUserT([]);setMsg('Learned corrections cleared.')}}>Forget learned corrections ({userT.length})</button></div>}
+        {userT.length>0&&<div className="row"><button onClick={()=>{clearUserTemplates();setUserT([]);setMsg('Saved corrections cleared.')}}>Forget saved corrections ({userT.length})</button></div>}
         <div className="row">Shift all: <button onClick={()=>shift(0,-1)}>←</button><button onClick={()=>shift(0,1)}>→</button><button onClick={()=>shift(-1,0)}>↑</button><button onClick={()=>shift(1,0)}>↓</button></div></>}
       <div className="row"><input value={fen} onChange={e=>setFen(e.target.value)} placeholder="FEN"/>
         <button onClick={()=>load(fen)}>Load</button><button onClick={()=>setFen(toFen(b,turn))}>Get</button></div>
-      <label>Image to position: <input type="file" accept="image/*" onChange={e=>scan(e.target.files[0])}/></label>
+      <label>Image to position: <input type="file" accept="image/*" onChange={e=>{const f=e.target.files[0];e.target.value='';scan(f)}}/></label>
     </div></div>;
 }

@@ -58,8 +58,10 @@ The built-in engine is much stronger than a simple depth-limited search but far 
 - `src/templates.json` holds 122 labelled piece images from 7 board styles. Tested leave-one-style-out (train on 6 styles, test on the 7th) about 96% of pieces are right
   and the orange rings flag most mistakes. Pieces rendered from standard Chinese fonts were tried as extra training data and did **not** help reliably, so they are not used.
 - A small tie-breaker prefers pieces on their starting squares (puzzle positions often keep them there).
-- Tap an orange-ringed piece in "Set up position" to get the likely alternatives; any piece you change is stored in the browser (localStorage) when you press Play
-  and used on later scans ("Forget learned corrections" clears it). To improve the built-in memory, send new board images with the correct position.
+- In "Set up position", tapping a piece opens a panel (likely types first); nothing is ever replaced by a stray tap. Changes are only remembered if you press
+  **Teach the app** (the panel lists exactly what you changed). Saved corrections live in this browser (localStorage key `xq_user_templates_v2`), pieces read from them get a
+  purple dotted ring, and "Forget saved corrections" removes them. Earlier automatic learning (v1) was removed because an accidental edit could be saved as a "correction".
+  To improve the built-in memory, send new board images with the correct position.
 
 ## Layout
 The board scales with the screen (never taller than the viewport): board left / panel right on desktop and landscape, board on top / panel below on portrait tablets and phones.
