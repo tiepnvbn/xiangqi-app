@@ -71,3 +71,8 @@ Cannon and soldier points have the usual corner marks.
 Images are shrunk to 400px wide with an explicit area-average (`boxDownscale` in `src/vision.js`) instead of the browser's own resampling, so a given image gives the same
 result on every device. (The browser's default downscale of large images is blurry/aliased and flipped a close horse-vs-cannon call on one test image.)
 Memory: 130 labelled pieces from 8 board styles. A fresh scan also clears the previous game's history and last-move marks.
+
+## Memory update (physical-board photo)
+`src/templates.json` now has 138 real piece images from 9 board styles plus 39 rendered samples of the black-cannon variant 包 (entries with `p:0.04`: a small score penalty so
+rendered samples only win when nothing real matches). On a photo where 包 was never seen, the cannon/horse call is a near tie (0.60 vs 0.57) and can flip with one pixel of detection
+noise, so such pieces are ringed orange; tap them to choose the right type, then press "Teach the app" to remember it.

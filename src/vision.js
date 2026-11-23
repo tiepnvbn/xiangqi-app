@@ -150,15 +150,16 @@ export function assignSide(scores,pos){
   const r=hungarian(cost);let tot=0,bad=0;r.forEach((j,i)=>{tot+=cost[i][j]+(slots[j]==='K'?3:0)+startBonus(slots[j],pos[i][0],pos[i][1]);if(cost[i][j]>=BIG)bad++});
   return{cls:r.map(j=>slots[j]),bad,total:-tot}}
 
-export const decodeTemplates=(raw,u=false)=>raw.map(t=>{const b=atob(t.d),v=new Float32Array(GN*GN);for(let i=0;i<v.length;i++)v[i]=((b.charCodeAt(i)<<24)>>24)*t.s;return{cls:t.c,v,u}});
+export const decodeTemplates=(raw,u=false)=>raw.map(t=>{const b=atob(t.d),v=new Float32Array(GN*GN);for(let i=0;i<v.length;i++)v[i]=((b.charCodeAt(i)<<24)>>24)*t.s;return{cls:t.c,v,u,pen:t.p||0}});
 // Fully local recognition. Returns null if red/black cannot be told apart. TP = decoded templates.
 export function recognize(d,TP){
   const{P,g,W,H,rgba}=d,isRed=i=>P[i].rs>35;
   if(!P.some(p=>p.rs>35)||!P.some(p=>p.rs<=35))return null;
   const V=P.map(q=>glyphVecs(rgba,W,H,q)),R=V.map(vs=>vs.map(v=>Float32Array.from(v).reverse())); // R: same glyphs turned 180 degrees (board seen from the other side)
   const sim=(i,v0)=>{let m=-1;for(const v of V[i])m=Math.max(m,dot(v,v0));for(const v of R[i])m=Math.max(m,dot(v,v0)-0.05);return m};
+  // templates may carry .pen: rendered (non-photo) samples count for less
   const UB=[],S0=P.map((q,i)=>{const ob=Object.fromEntries(CLS.map(c=>[c,-1])),ou=Object.fromEntries(CLS.map(c=>[c,-1]));
-    for(const m of TP){const s=sim(i,m.v),t=m.u?ou:ob;if(s>t[m.cls])t[m.cls]=s}UB.push([ob,ou]);return Object.fromEntries(CLS.map(c=>[c,Math.max(ob[c],ou[c])]))});
+    for(const m of TP){const s=sim(i,m.v)-(m.pen||0),t=m.u?ou:ob;if(s>t[m.cls])t[m.cls]=s}UB.push([ob,ou]);return Object.fromEntries(CLS.map(c=>[c,Math.max(ob[c],ou[c])]))});
   const S=S0.map((o,i)=>{const grp=P.map((u,j)=>j).filter(j=>isRed(j)===isRed(i)&&(j===i||sim(i,V[j][4])>0.85));
     return Object.fromEntries(CLS.map(c=>[c,grp.reduce((a,j)=>a+S0[j][c],0)/grp.length]))});
   const lineBest=Math.max(1,g.cols[0].sc+g.rows[0].sc),H_=[];
