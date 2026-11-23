@@ -15,6 +15,10 @@ for(let sq=0;sq<90;sq++){const r=(sq/9)|0,c=sq%9;KM[sq]=[];AM[sq]=[];BM[sq]=[];N
   if(r>0)PM[0][sq].push(sq-9);if(r<=4){if(c>0)PM[0][sq].push(sq-1);if(c<8)PM[0][sq].push(sq+1)}
   if(r<9)PM[1][sq].push(sq+9);if(r>=5){if(c>0)PM[1][sq].push(sq-1);if(c<8)PM[1][sq].push(sq+1)}}
 for(let s=0;s<2;s++)for(let p=0;p<90;p++)for(const t of PM[s][p])PATK[s][t].push(p);
+// cờ úp: face-up advisors/elephants are not confined to the palace / their own half
+const AML=[],BML=[];for(let sq=0;sq<90;sq++){const r=(sq/9)|0,c=sq%9;AML[sq]=[];BML[sq]=[];
+  for(const[a,d]of D){const R=r+a,C=c+d;if(ok(R,C))AML[sq].push(R*9+C);const R2=r+2*a,C2=c+2*d;if(ok(R2,C2))BML[sq].push([R2*9+C2,R*9+C])}}
+let LOOSE=false;export const setLoose=v=>{LOOSE=!!v};
 let seed=0x9e3779b9;const rnd=()=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return seed|0};
 const ZL=new Int32Array(1440),ZH=new Int32Array(1440);for(let i=0;i<1440;i++){ZL[i]=rnd();ZH[i]=rnd()}const SL=rnd(),SH=rnd();
 const B=new Int8Array(90),ksq=[-1,-1],CAPS=new Int8Array(MAXPLY+4);let side=0,hL=0,hH=0;
@@ -35,14 +39,16 @@ function attacked(sq,by){const r0=by<<3,rays=RAY[sq];
     for(;i<n;i++){const p=B[ray[i]];if(p){if(p===r0+5)return true;break}}
     for(i++;i<n;i++){const p=B[ray[i]];if(p){if(p===r0+6)return true;break}}}
   for(const[k,l]of NATK[sq])if(B[k]===r0+4&&!B[l])return true;
-  for(const p of PATK[by][sq])if(B[p]===r0+7)return true;return false}
+  for(const p of PATK[by][sq])if(B[p]===r0+7)return true;
+  if(LOOSE){for(const n of AML[sq])if(B[n]===r0+2)return true;for(const[t,e]of BML[sq])if(B[t]===r0+3&&!B[e])return true}
+  return false}
 function facing(){const a=ksq[0],b=ksq[1];if(a<0||b<0||a%9!==b%9)return false;const hi=Math.max(a,b);for(let s=Math.min(a,b)+9;s<hi;s+=9)if(B[s])return false;return true}
 const inCheck=sd=>attacked(ksq[sd],sd^1)||facing();
 
 function gen(ply,sd,caps){const L=MV[ply];let n=0;
   for(let f=0;f<90;f++){const p=B[f];if(!p||(p>>3)!==sd)continue;const t=p&7;
-    if(t===1||t===2||t===7){const T=t===1?KM[f]:t===2?AM[f]:PM[sd][f];for(let i=0;i<T.length;i++){const to=T[i],q=B[to];if(q?(q>>3)!==sd:!caps)L[n++]=f|(to<<7)}}
-    else if(t===3){const T=BM[f];for(let i=0;i<T.length;i++){const to=T[i][0],q=B[to];if(!B[T[i][1]]&&(q?(q>>3)!==sd:!caps))L[n++]=f|(to<<7)}}
+    if(t===1||t===2||t===7){const T=t===1?KM[f]:t===2?(LOOSE?AML[f]:AM[f]):PM[sd][f];for(let i=0;i<T.length;i++){const to=T[i],q=B[to];if(q?(q>>3)!==sd:!caps)L[n++]=f|(to<<7)}}
+    else if(t===3){const T=LOOSE?BML[f]:BM[f];for(let i=0;i<T.length;i++){const to=T[i][0],q=B[to];if(!B[T[i][1]]&&(q?(q>>3)!==sd:!caps))L[n++]=f|(to<<7)}}
     else if(t===4){const T=NM[f];for(let i=0;i<T.length;i++){const to=T[i][0],q=B[to];if(!B[T[i][1]]&&(q?(q>>3)!==sd:!caps))L[n++]=f|(to<<7)}}
     else if(t===5){for(let d=0;d<4;d++){const ray=RAY[f][d];for(let i=0;i<ray.length;i++){const to=ray[i],q=B[to];if(!q){if(!caps)L[n++]=f|(to<<7);continue}if((q>>3)!==sd)L[n++]=f|(to<<7);break}}}
     else{for(let d=0;d<4;d++){const ray=RAY[f][d];let scr=false;for(let i=0;i<ray.length;i++){const to=ray[i],q=B[to];
@@ -100,6 +106,7 @@ function loadTimeline(timeline,b,turn){
   for(const st of tl){setup(st.b,st.turn);hp++;HL[hp]=hL;HH[hp]=hH;CHK[hp]=hp>0&&inCheck(side)?1:0;
     let cnt=0;for(let i=0;i<90;i++)if(B[i])cnt++;CAPIDX[hp]=hp>0&&prev!==null&&cnt<prev?hp:hp>0?CAPIDX[hp-1]:0;prev=cnt}
   setup(b,turn)}
+export function legalMovesLoose(chars,turn){const o=LOOSE;LOOSE=true;try{return legalMoves(chars,turn)}finally{LOOSE=o}}
 export function legalMoves(chars,turn){setup(chars,turn);const out=[],n=gen(0,side,false),L=MV[0].slice(0,n),sd=side;
   for(const m of L){make(m,0);if(!inCheck(sd))out.push([m&127,m>>7]);unmake(m,0)}return out}
 export function perft(chars,turn,depth){setup(chars,turn);const go=(d,ply)=>{if(d===0)return 1;const sd=side,n=gen(ply,sd,false),L=MV[ply].slice(0,n);let t=0;
@@ -125,3 +132,13 @@ export function think(req){
     if(stop)break;best=ib;bestScore=is;done=d;roots.splice(roots.indexOf(ib),1);roots.unshift(ib);
     if(Math.abs(is)>MATE-200||Date.now()-t0>cfg.ms*0.55)break}
   return{move:[best&127,best>>7],depth:done,score:bestScore,nodes,ms:Date.now()-t0}}
+
+// Exact scores (from the mover's point of view) for the given root moves; every piece is treated as face-up with its real identity.
+// moves: [[from,to],...] (already legal under the cờ úp rules). Returns an array of scores.
+export function scoreMoves(req){
+  const old=LOOSE;LOOSE=true;
+  try{setup(req.b,req.turn);hp=0;HL[0]=hL;HH[0]=hH;CHK[0]=0;CAPIDX[0]=0;TK.fill(0);HIST.fill(0);for(const k of KIL)k.fill(0);
+    nodes=0;stop=false;deadline=Infinity;const d=Math.max(1,req.depth|0),out=[];
+    for(const[f,t]of req.moves){const m=f|(t<<7);make(m,0);pushH(0);const sc=-search(d-1,-INF,INF,1);hp--;unmake(m,0);out.push(sc)}
+    return out}
+  finally{LOOSE=old}}

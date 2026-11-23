@@ -76,3 +76,15 @@ Memory: 130 labelled pieces from 8 board styles. A fresh scan also clears the pr
 `src/templates.json` now has 138 real piece images from 9 board styles plus 39 rendered samples of the black-cannon variant 包 (entries with `p:0.04`: a small score penalty so
 rendered samples only win when nothing real matches). On a photo where 包 was never seen, the cannon/horse call is a near tie (0.60 vs 0.57) and can flip with one pixel of detection
 noise, so such pieces are ringed orange; tap them to choose the right type, then press "Teach the app" to remember it.
+
+## Cờ úp (hidden pieces / jieqi)
+Press **Cờ úp** in the panel. Everything except the two generals starts face-down (drawn as `?`) on the normal starting points, with each side's pieces shuffled.
+- A face-down piece moves like the piece that normally starts on that point, then turns over and moves as what it really is. Nobody (you, the engine) knows its identity before that; captured pieces are revealed.
+- Variant details I could verify (clubxiangqi.com): Red moves first; face-up advisors are not restricted to the palace and face-up elephants may cross the river; face-down pieces give check with the move of their starting point; flying-general rule as usual.
+- Result: checkmate/stalemate loses; draws by 3-fold repetition, 120 plies without a capture, or only generals left; perpetual check loses. **Perpetual chase is not implemented for cờ úp** (it is for normal xiangqi).
+- AI (`src/jieqiAI.js`): it only uses public information (which identities are still unrevealed for each side). It deals them randomly over the face-down points several times, searches each deal with the normal engine under the cờ úp movement rules, and plays the move with the best average score. Levels change search depth and number of deals; it is an approximation, not a perfect player. Measured: Medium beat Beginner in 53 of 64 test games (9 losses, 2 draws); Hard and above were only timed, not match-tested.
+- Position setup, FEN and photo scan are for normal xiangqi only. Cờ úp games can be undone, reviewed move by move, copied and downloaded (notation: `?b9-c7=N` = a face-down piece moved and turned out to be a Horse, `x` capture, `+` check).
+- Tests: `npm test` also runs `src/test.jieqi.js` (rules, engine/rules agreement, AI legality).
+
+## Changes in this version
+- Removed the Chinese river words (漢 界 / 楚 河) from the board and the title. The piece characters (車 馬 相 …) are kept so pieces stay recognisable; say if you want them replaced by letters or icons.
