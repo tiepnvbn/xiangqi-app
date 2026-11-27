@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react';
 import {GAMES} from './games.js';
 import App from './App.jsx';
 import CaroGame from './CaroGame.jsx';
+import ChessGame from './ChessGame.jsx';
 const read=()=>(typeof location==='undefined'?'':location.hash.replace(/^#\/?/,''));
 // Hand-drawn icons (no external images, no text characters)
 const Disc=({cx,cy,r=15,fill,ring,children})=><g><circle cx={cx} cy={cy} r={r} fill={fill} stroke={ring} strokeWidth="3"/><circle cx={cx} cy={cy} r={r-5} fill="none" stroke={ring} strokeWidth="1.5" opacity=".7"/>{children}</g>;
@@ -12,6 +13,9 @@ const ICONS={
   jieqi:()=><svg viewBox="0 0 96 96" aria-hidden="true"><rect width="96" height="96" rx="18" fill="#e8c98a"/>
     <Disc cx={36} cy={36} fill="#b98b52" ring="#222"><text x="36" y="45" textAnchor="middle" fontSize="26" fontWeight="700" fill="#222">?</text></Disc>
     <Disc cx={60} cy={58} r={18} fill="#b98b52" ring="#b22"><text x="60" y="68" textAnchor="middle" fontSize="30" fontWeight="700" fill="#b22">?</text></Disc></svg>,
+  chess:()=><svg viewBox="0 0 96 96" aria-hidden="true"><rect width="96" height="96" rx="18" fill="#f0d9b5"/>
+    <g fill="#b58863">{[0,1,2,3,4,5].flatMap(r=>[0,1,2,3,4,5].map(c=>(r+c)%2?<rect key={r+'-'+c} x={6+c*14} y={6+r*14} width="14" height="14"/>:null))}</g>
+    <g fill="#fff" stroke="#222" strokeWidth="2.5" strokeLinejoin="round"><circle cx="48" cy="30" r="10"/><path d="M40 42C42 54 36 58 32 72H64C60 58 54 54 56 42Z"/><rect x="26" y="72" width="44" height="9" rx="3"/></g></svg>,
   caro:()=><svg viewBox="0 0 96 96" aria-hidden="true"><rect width="96" height="96" rx="18" fill="#f1e6c8"/>
     <g stroke="#9a8c6a" strokeWidth="1.5">{[1,2,3,4].map(k=><g key={k}><path d={`M12 ${12+k*14.4}H84`}/><path d={`M${12+k*14.4} 12V84`}/></g>)}</g>
     <g stroke="#d33" strokeWidth="5" strokeLinecap="round">{[0,1,2].map(k=><path key={k} d={`M${18+k*24} ${18+k*24}l10 10m0-10l-10 10`}/>)}</g>
@@ -22,6 +26,7 @@ export default function Hub(){
   const go=r=>{location.hash=r?'#/'+r:'#/'};
   if(route==='xiangqi')return <App key="std" game="std" onHome={()=>go('')}/>;
   if(route==='jieqi')return <App key="up" game="up" onHome={()=>go('')}/>;
+  if(route==='chess')return <ChessGame onHome={()=>go('')}/>;
   if(route==='caro')return <CaroGame onHome={()=>go('')}/>;
   return <main className="hub"><header><h1>Board Games</h1><p>Chọn một trò chơi · Pick a game. Everything runs on your device and works offline.</p></header>
     <div className="cards">{GAMES.map(g=>{const Icon=ICONS[g.id];return <a key={g.id} className="card" href={'#/'+g.id} style={{'--accent':g.color}}>
