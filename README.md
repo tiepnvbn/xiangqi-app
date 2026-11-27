@@ -108,3 +108,7 @@ To add another game: add an entry to `src/games.js`, an icon in `ICONS` in `src/
 - Piece graphics are Unicode chess symbols drawn as text; the look depends on the fonts on the device (all common systems have them).
 - **License warning: Stockfish is GPL-3.0.** If you publish a site that serves it, the GPL applies to what you distribute together with it (you may need to offer your source code under GPL-3.0). `public/stockfish/COPYING-GPL-3.0.txt` is copied next to the engine. If that is a problem for you, either publish the source under a compatible license or replace the engine with your own. This is not legal advice.
 - Tests: `src/test.chess.js` runs the real engine in Node (legal moves at several levels, finds a mate in 1, promotion, search superseding/cancel, castling/en passant/stalemate through chess.js).
+
+## 2 players on one device
+Every game has a **2 players** mode for two people sharing one screen/phone (no online play yet): caro and chess have a vs AI / 2 players switch, and Cờ tướng and Cờ úp have **vs Engine / 2 players (same screen)**. In 2-player mode no engine runs, both sides are moved by tapping, the board does not auto-rotate (use **Flip board** if you want to turn it), undo takes back one move, and the choice is remembered per game in the browser.
+In Cờ úp the hidden identities are unknown to both players, so sharing a screen leaks nothing.

@@ -29,6 +29,8 @@ export default function App({game='std',onHome}){
   const [b,setB]=useState(()=>g0?g0.b:parse(START).b),[turn,setTurn]=useState('w'),[hist,setHist]=useState([]),[hid,setHid]=useState(()=>g0?g0.hid:NO_HID);
   const variant=game;
   const up=variant==='up';
+  const [vs,setVsRaw]=useState(()=>{try{return localStorage.getItem('vs_'+game)==='two'?'two':'ai'}catch(e){return'ai'}});
+  const setVs=v=>{setVsRaw(v);try{localStorage.setItem('vs_'+game,v)}catch(e){}};
   const [sel,setSel]=useState(null),[mode,setMode]=useState('play'),[lv,setLv]=useState(3),[human,setHuman]=useState('w');
   const [flags,setFlags]=useState([]),[fix,setFix]=useState(null),[userT,setUserT]=useState(()=>decodeTemplates(loadUserTemplates(),true)),[hasDet,setHasDet]=useState(false),[view,setView]=useState(null),[flip,setFlip]=useState(false),[online,setOnline]=useState(typeof navigator==='undefined'?true:navigator.onLine),[last,setLast]=useState(null),[cap,setCap]=useState(false),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[pal,setPal]=useState(null),[learnedCells,setLearnedCells]=useState([]),[fen,setFen]=useState(''),[msg,setMsg]=useState('');
   const wk=useRef(),job=useRef(0),detRef=useRef(null),scanInfo=useRef(null),histRef=useRef(null);
@@ -41,13 +43,13 @@ export default function App({game='std',onHome}){
     if(up){const r=applyUp(b,hid,m);setCap(!!r.captured);setB(r.b);setHid(r.hid);return r.revealed?`${turn==='w'?'Red':'Black'} turned over ${'AEIOU'.includes(NAME[r.revealed.toUpperCase()][0])?'an':'a'} ${NAME[r.revealed.toUpperCase()]}. `:''}
     setCap(!!b[m[1]]);setB(apply(b,m));return ''};
   useEffect(()=>{
-    if(mode!=='play'||over||turn===human)return;
+    if(mode!=='play'||over||vs==='two'||turn===human)return;
     wk.current??=new Worker(new URL('./engine.worker.js',import.meta.url),{type:'module'});
     const id=++job.current,w=wk.current;setBusy(true);
     w.onmessage=e=>{if(e.data.id!==job.current)return;setBusy(false);if(e.data.move){const t=move(e.data.move);if(e.data.info&&e.data.info.depth)setNote(t+(up?`Engine tried ${e.data.info.depth} possible deals of the hidden pieces in ${(e.data.info.ms/1000).toFixed(1)}s`:`Engine searched ${e.data.info.depth} moves deep in ${(e.data.info.ms/1000).toFixed(1)}s`));else if(t)setNote(t)}};
     if(up)w.postMessage({id,variant:'up',b,hid,turn,keys:tl.slice(0,-1).map(x=>keyUpS(x)),level:lv});else w.postMessage({id,b,turn,timeline:tl.map(x=>({b:x.b,turn:x.turn})),level:lv});
     return()=>{job.current++;setBusy(false)};
-  },[b,hid,turn,mode,human,lv,over,up]);
+  },[b,hid,turn,mode,human,lv,over,up,vs]);
   useEffect(()=>()=>{wk.current&&wk.current.terminate()},[]);
   const click=i=>{
     if(mode==='edit'){
@@ -55,7 +57,7 @@ export default function App({game='std',onHome}){
       if(pal!=='x'&&!pal){setNote('Choose a piece in the palette first, then tap an empty point.');return}
       setFlags(f=>f.filter(x=>x!==i));setLearnedCells(f=>f.filter(x=>x!==i));const n=b.slice();n[i]=pal==='x'?'':pal;setB(n);setFix(null);setNote('');return}
     if(view!==null){setNote('Reviewing an earlier position. Press "Back to game" to continue.');return}
-    if(over||busy||turn!==human)return;
+    if(over||busy||(vs==='ai'&&turn!==human))return;
     const mine=b[i]&&red(b[i])===(turn==='w');
     if(sel!==null&&ms.some(m=>m[0]===sel&&m[1]===i))return move([sel,i]);
     if(mine){setSel(i);setNote(ms.some(m=>m[0]===i)?'':chk?'This piece cannot get your general out of check.':'This piece has no legal moves (moving it would expose your general, or it is blocked).');return}
@@ -65,7 +67,7 @@ export default function App({game='std',onHome}){
   const load=f=>{const p=parse(f);if(!p)return setMsg('Invalid FEN');setHid(NO_HID);setB(p.b);setTurn(p.turn);setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMsg('')};
   const startVariant=v=>{setMode('play');setFlags([]);setFix(null);setLearnedCells([]);setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMsg('');scanInfo.current=null;
     if(v==='up'){const g=newGame();setB(g.b);setHid(g.hid);setTurn('w')}else{const p=parse(START);setHid(NO_HID);setB(p.b);setTurn('w')}};
-  const undo=()=>{if(!hist.length)return;const k=turn===human&&hist.length>1?2:1,h=hist[hist.length-k];setB(h.b);setHid(h.hid||NO_HID);setTurn(h.turn);setLast(h.last);setCap(h.cap);setHist(hist.slice(0,-k));setSel(null);setNote('');setView(null)};
+  const undo=()=>{if(!hist.length)return;const k=vs==='ai'&&turn===human&&hist.length>1?2:1,h=hist[hist.length-k];setB(h.b);setHid(h.hid||NO_HID);setTurn(h.turn);setLast(h.last);setCap(h.cap);setHist(hist.slice(0,-k));setSel(null);setNote('');setView(null)};
   const play=()=>{setFlags([]);if(!b.includes('K')||!b.includes('k'))return setMsg('Both generals are required.');scanInfo.current=null;setFix(null);setLearnedCells([]);setMsg('');
     setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMode('play')};
   const corr=mode==='edit'&&scanInfo.current?corrections(scanInfo.current,b):[];
@@ -95,7 +97,7 @@ export default function App({game='std',onHome}){
   const n=states.length-1,cur=view??n,goto=k=>{k=Math.max(0,Math.min(n,k));setView(k===n?null:k);setSel(null)};
   const sv=view!==null&&mode==='play'?states[Math.min(view,n)]:null,db=sv?sv.b:b,dHid=sv?sv.hid:hid,dTurn=sv?sv.turn:turn,dLast=mode==='play'?(sv?sv.last:last):null;
   const dchk=mode==='play'&&(up?inCheckUp(db,dHid,dTurn):inCheck(db,dTurn)),datk=dchk?(up?checkersUp(db,dHid,dTurn):checkers(db,dTurn)):[],dKing=dchk?(up?kingSq(db,dTurn):kingOf(db,dTurn)):-1,dWho=dTurn==='w'?'Red':'Black';
-  const fl=flip!==(human==='b'),px=i=>X(fl?8-i%9:i%9),py=i=>Y(fl?9-((i/9)|0):((i/9)|0));
+  const fl=flip!==(vs==='ai'&&human==='b'),px=i=>X(fl?8-i%9:i%9),py=i=>Y(fl?9-((i/9)|0):((i/9)|0));
   const mv=useMemo(()=>up?upNotes(states):notes(states),[states,up]);
   const resStr=res?(res.winner==='w'?'1-0':res.winner==='b'?'0-1':'1/2-1/2'):noMoves?(turn==='w'?'0-1':'1-0'):'*';
   const exportText=()=>up?upGameText(mv,resStr):gameText(states,resStr,new Date().toISOString().slice(0,10).replace(/-/g,'.'));
@@ -129,11 +131,12 @@ export default function App({game='std',onHome}){
         {!sv&&targets.includes(i)&&<circle cx={cx} cy={cy} r="7" fill="#2a7" opacity=".7" pointerEvents="none"/>}</g>})}
     </svg></div>
     <div className="panel">
-      {onHome&&<div className="row"><button onClick={onHome}>← All games</button></div>}<h2 style={{margin:0}}>{up?'Cờ Úp · Hidden Xiangqi':'Cờ Tướng · Xiangqi'}</h2><div className="msg">{status}</div>{sv&&<div className="note">Reviewing move {view} of {n}. Arrow keys ◀ ▶ step through the game.</div>}{dchk&&(sv||!noMoves)&&<div className="warn">⚠ {dWho} general is in check!{!sv&&turn===human?' Capture the attacker, block, or move the general.':''}</div>}{!online&&<div className="note">Offline: playing and photo scanning on this device still work; only the AI fallback needs a connection.</div>}{note&&<div className="note">{note}</div>}<div className="msg">{msg}</div>
-      {!up&&<div className="row"><button className={mode==='play'?'on':''} onClick={play}>Play vs engine</button>
+      {onHome&&<div className="row"><button onClick={onHome}>← All games</button></div>}<h2 style={{margin:0}}>{up?'Cờ Úp · Hidden Xiangqi':'Cờ Tướng · Xiangqi'}</h2><div className="msg">{status}</div>{sv&&<div className="note">Reviewing move {view} of {n}. Arrow keys ◀ ▶ step through the game.</div>}{dchk&&(sv||!noMoves)&&<div className="warn">⚠ {dWho} general is in check!{!sv&&(vs==='two'||turn===human)?' Capture the attacker, block, or move the general.':''}</div>}{!online&&<div className="note">Offline: playing and photo scanning on this device still work; only the AI fallback needs a connection.</div>}{note&&<div className="note">{note}</div>}<div className="msg">{msg}</div>
+      {!up&&<div className="row"><button className={mode==='play'?'on':''} onClick={play}>{vs==='ai'?'Play vs engine':'Play'}</button>
         <button className={mode==='edit'?'on':''} onClick={()=>{setView(null);setMode('edit')}}>Set up position</button></div>}
-      <div className="row"><select value={lv} onChange={e=>setLv(+e.target.value)}>{LEVELS.map((l,i)=><option key={i} value={i}>{l}</option>)}</select>
-        <select value={human} onChange={e=>setHuman(e.target.value)}><option value="w">You: Red</option><option value="b">You: Black</option></select></div>
+      <div className="row"><button className={vs==='ai'?'on':''} onClick={()=>setVs('ai')}>vs Engine</button><button className={vs==='two'?'on':''} onClick={()=>setVs('two')}>2 players (same screen)</button></div>
+      {vs==='ai'&&<div className="row"><select value={lv} onChange={e=>setLv(+e.target.value)}>{LEVELS.map((l,i)=><option key={i} value={i}>{l}</option>)}</select>
+        <select value={human} onChange={e=>setHuman(e.target.value)}><option value="w">You: Red</option><option value="b">You: Black</option></select></div>}
       <div className="row"><button onClick={undo}>Undo</button><button onClick={()=>setFlip(f=>!f)}>Flip board</button><button onClick={()=>startVariant(variant)}>New game</button></div>
       {up&&<UpInfo b={b} hid={hid}/>}
       {mode==='play'&&<><div className="hist" ref={histRef}>{mv.length===0&&<span className="note">No moves yet</span>}
