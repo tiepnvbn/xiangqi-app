@@ -24,8 +24,10 @@ function UpInfo({b,hid}){
     const un=unseen(b,hid,side),face=Object.entries(un).map(([k,n])=>n+'× '+NAME[k]).join(', ');
     return <div key={side} className="note"><b>{side==='w'?'Red':'Black'}</b> · face-down pieces left: {Object.values(un).reduce((a,x)=>a+x,0)}{face?` (${face})`:''}{lost.length?` · captured: ${lost.map(k=>glyph(side==='w'?k:k.toLowerCase())).join(' ')}`:''}</div>};
   return <div className="fixbox"><div className="note">Every piece except the generals starts face-down (shown as ?). A face-down piece moves like the piece that normally starts on that point, then turns over and moves as what it really is. Nobody knows what a face-down piece is until it moves or is captured.</div>{row('w')}{row('b')}</div>}
-export default function App(){
-  const [b,setB]=useState(parse(START).b),[turn,setTurn]=useState('w'),[hist,setHist]=useState([]),[variant,setVariant]=useState('std'),[hid,setHid]=useState(NO_HID);
+export default function App({game='std',onHome}){
+  const [g0]=useState(()=>game==='up'?newGame():null);
+  const [b,setB]=useState(()=>g0?g0.b:parse(START).b),[turn,setTurn]=useState('w'),[hist,setHist]=useState([]),[hid,setHid]=useState(()=>g0?g0.hid:NO_HID);
+  const variant=game;
   const up=variant==='up';
   const [sel,setSel]=useState(null),[mode,setMode]=useState('play'),[lv,setLv]=useState(3),[human,setHuman]=useState('w');
   const [flags,setFlags]=useState([]),[fix,setFix]=useState(null),[userT,setUserT]=useState(()=>decodeTemplates(loadUserTemplates(),true)),[hasDet,setHasDet]=useState(false),[view,setView]=useState(null),[flip,setFlip]=useState(false),[online,setOnline]=useState(typeof navigator==='undefined'?true:navigator.onLine),[last,setLast]=useState(null),[cap,setCap]=useState(false),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[pal,setPal]=useState(null),[learnedCells,setLearnedCells]=useState([]),[fen,setFen]=useState(''),[msg,setMsg]=useState('');
@@ -46,6 +48,7 @@ export default function App(){
     if(up)w.postMessage({id,variant:'up',b,hid,turn,keys:tl.slice(0,-1).map(x=>keyUpS(x)),level:lv});else w.postMessage({id,b,turn,timeline:tl.map(x=>({b:x.b,turn:x.turn})),level:lv});
     return()=>{job.current++;setBusy(false)};
   },[b,hid,turn,mode,human,lv,over,up]);
+  useEffect(()=>()=>{wk.current&&wk.current.terminate()},[]);
   const click=i=>{
     if(mode==='edit'){
       if(b[i]&&pal!=='x'){setFix(i);return}   // tapping a piece opens a choice panel: nothing is replaced by accident
@@ -59,8 +62,8 @@ export default function App(){
     if(sel!==null&&(up?pseudoUp(b,hid,turn):pseudo(b,turn)).some(m=>m[0]===sel&&m[1]===i))setNote(chk?'Your general is in check! You must capture the attacker, block the attack, or move the general.':'Illegal: that move would leave your general under attack (or facing the enemy general).');
     else{setNote('');setSel(null)}
   };
-  const load=f=>{const p=parse(f);if(!p)return setMsg('Invalid FEN');setVariant('std');setHid(NO_HID);setB(p.b);setTurn(p.turn);setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMsg('')};
-  const startVariant=v=>{setVariant(v);setMode('play');setFlags([]);setFix(null);setLearnedCells([]);setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMsg('');scanInfo.current=null;
+  const load=f=>{const p=parse(f);if(!p)return setMsg('Invalid FEN');setHid(NO_HID);setB(p.b);setTurn(p.turn);setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMsg('')};
+  const startVariant=v=>{setMode('play');setFlags([]);setFix(null);setLearnedCells([]);setHist([]);setSel(null);setLast(null);setCap(false);setNote('');setView(null);setMsg('');scanInfo.current=null;
     if(v==='up'){const g=newGame();setB(g.b);setHid(g.hid);setTurn('w')}else{const p=parse(START);setHid(NO_HID);setB(p.b);setTurn('w')}};
   const undo=()=>{if(!hist.length)return;const k=turn===human&&hist.length>1?2:1,h=hist[hist.length-k];setB(h.b);setHid(h.hid||NO_HID);setTurn(h.turn);setLast(h.last);setCap(h.cap);setHist(hist.slice(0,-k));setSel(null);setNote('');setView(null)};
   const play=()=>{setFlags([]);if(!b.includes('K')||!b.includes('k'))return setMsg('Both generals are required.');scanInfo.current=null;setFix(null);setLearnedCells([]);setMsg('');
@@ -126,8 +129,7 @@ export default function App(){
         {!sv&&targets.includes(i)&&<circle cx={cx} cy={cy} r="7" fill="#2a7" opacity=".7" pointerEvents="none"/>}</g>})}
     </svg></div>
     <div className="panel">
-      <h2 style={{margin:0}}>{up?'Cờ Úp · Hidden Xiangqi':'Cờ Tướng · Xiangqi'}</h2>
-      <div className="row"><button className={!up?'on':''} onClick={()=>!up||startVariant('std')}>Cờ tướng</button><button className={up?'on':''} onClick={()=>up||startVariant('up')}>Cờ úp</button></div><div className="msg">{status}</div>{sv&&<div className="note">Reviewing move {view} of {n}. Arrow keys ◀ ▶ step through the game.</div>}{dchk&&(sv||!noMoves)&&<div className="warn">⚠ {dWho} general is in check!{!sv&&turn===human?' Capture the attacker, block, or move the general.':''}</div>}{!online&&<div className="note">Offline: playing and photo scanning on this device still work; only the AI fallback needs a connection.</div>}{note&&<div className="note">{note}</div>}<div className="msg">{msg}</div>
+      {onHome&&<div className="row"><button onClick={onHome}>← All games</button></div>}<h2 style={{margin:0}}>{up?'Cờ Úp · Hidden Xiangqi':'Cờ Tướng · Xiangqi'}</h2><div className="msg">{status}</div>{sv&&<div className="note">Reviewing move {view} of {n}. Arrow keys ◀ ▶ step through the game.</div>}{dchk&&(sv||!noMoves)&&<div className="warn">⚠ {dWho} general is in check!{!sv&&turn===human?' Capture the attacker, block, or move the general.':''}</div>}{!online&&<div className="note">Offline: playing and photo scanning on this device still work; only the AI fallback needs a connection.</div>}{note&&<div className="note">{note}</div>}<div className="msg">{msg}</div>
       {!up&&<div className="row"><button className={mode==='play'?'on':''} onClick={play}>Play vs engine</button>
         <button className={mode==='edit'?'on':''} onClick={()=>{setView(null);setMode('edit')}}>Set up position</button></div>}
       <div className="row"><select value={lv} onChange={e=>setLv(+e.target.value)}>{LEVELS.map((l,i)=><option key={i} value={i}>{l}</option>)}</select>

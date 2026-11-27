@@ -1,4 +1,4 @@
-# Xiangqi Web App (Vite + React)
+# Board Games Hub (Vite + React): Cờ tướng, Cờ úp, Cờ caro
 Play vs engine (4 levels), free position setup, FEN import/export, undo, and photo-to-position scanning.
 
 ## Run
@@ -88,3 +88,14 @@ Press **Cờ úp** in the panel. Everything except the two generals starts face-
 
 ## Changes in this version
 - Removed the Chinese river words (漢 界 / 楚 河) from the board and the title. The piece characters (車 馬 相 …) are kept so pieces stay recognisable; say if you want them replaced by letters or icons.
+
+## Game hub
+The home screen (`src/Hub.jsx`) shows one icon card per game; tapping a card opens that game, and **← All games** returns. Routes are URL hashes (`#/xiangqi`, `#/jieqi`, `#/caro`), so the browser Back button and deep links work, and no server rewrite rules are needed.
+To add another game: add an entry to `src/games.js`, an icon in `ICONS` in `src/Hub.jsx`, and one `if(route===...)` line in the same file.
+
+## Cờ caro (gomoku)
+- Rules (`src/caro.js`): 15×15 or 19×19, X moves first, five **or more** in a row wins. Optional "blocked-both-ends" rule (common in Vietnam): a line whose two ends are both blocked by opponent stones does not win. Board edges do not count as a block (my assumption; some groups play it differently).
+- Modes: vs AI (you choose X first or O second) or 2 players on one screen; undo; last move and winning line highlighted. Settings are remembered in the browser.
+- AI (`src/caroAI.js`, runs in `src/caro.worker.js`): every 5-cell window is scored by how many stones one side holds in it, updated incrementally; alpha-beta search with iterative deepening, forced-block/forced-win detection and a small attack bias. Levels: Beginner (sometimes misses a block), Easy (1-ply), Medium (3-ply), Hard (up to 6-ply, 2.5s cap), Expert (deeper, 5s cap).
+- Measured in `npm test` / my runs: Medium beat Beginner 6/6; Hard beat Easy 4/4 and 8/8 in a separate run; Expert took about 3.3s per move on average (max about 5.1s). Expert vs Hard was 1-1 on 15×15 and 2-0 on 19×19 (tiny sample): Expert is not clearly stronger than Hard yet. It is a heuristic AI, not a solver, and a strong human can beat every level.
+- Tests: `src/test.caro.js` (win detection for every direction, both rule variants, AI blocks fours/open threes, takes wins, strength games). `npm test` runs xiangqi, cờ úp and caro tests.
